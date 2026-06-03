@@ -196,11 +196,23 @@ export const generateReviewQuestions = async (count, subjectId = null) => {
   return response.data
 }
 
-export const submitReviewAnswer = async (questionId, userAnswer) => {
+export const submitReviewAnswer = async (questionIdOrPayload, userAnswer) => {
+  const payload = typeof questionIdOrPayload === 'object' && questionIdOrPayload !== null
+    ? {
+        question_id: questionIdOrPayload.question_id,
+        user_answer: questionIdOrPayload.user_answer,
+        is_review_mode: questionIdOrPayload.is_review_mode ?? true
+      }
+    : {
+        question_id: questionIdOrPayload,
+        user_answer: userAnswer,
+        is_review_mode: true
+      }
+
   const response = await api.post('/review/submit', {
-    question_id: questionId,
-    user_answer: userAnswer,
-    is_review_mode: true
+    question_id: payload.question_id,
+    user_answer: payload.user_answer,
+    is_review_mode: payload.is_review_mode
   })
   return response.data
 }

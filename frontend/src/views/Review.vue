@@ -203,6 +203,7 @@ const handleLogout = () => {
 }
 
 const currentQuestion = computed(() => reviewQuestions.value[currentIndex.value])
+const currentQuestionId = computed(() => currentQuestion.value?.id ?? currentQuestion.value?.question_id ?? null)
 const correctCount = computed(() => Object.values(answers.value).filter(a => a.is_correct).length)
 const accuracyPercent = computed(() => reviewQuestions.value.length ? Math.round((correctCount.value / reviewQuestions.value.length) * 100) : 0)
 const progressPercent = computed(() => Math.round(((currentIndex.value) / reviewQuestions.value.length) * 100))
@@ -248,11 +249,16 @@ const startReview = async () => {
   try {
     const count = Number(reviewCount.value) || 10
     const subjectId = route.query.subject_id ? Number(route.query.subject_id) : null
-    reviewQuestions.value = await generateReviewQuestions(count, subjectId)
+    const generatedQuestions = await generateReviewQuestions(count, subjectId)
+    reviewQuestions.value = generatedQuestions.map(question => ({
+      ...question,
+      id: question.id ?? question.question_id
+    }))
     reviewStarted.value = true
     currentIndex.value = 0
     answers.value = {}
     showResult.value = false
+    currentResult.value = null
     selectedAnswer.value = ''
   } catch (error) {
     ElMessage.error(`生成复习题失败：${error.response?.data?.detail || error.message}`)
@@ -262,12 +268,16 @@ const startReview = async () => {
 }
 
 const submitAnswer = async () => {
-  if (!selectedAnswer.value) return
+  if (!selectedAnswer.value || !currentQuestionId.value) return
   submitting.value = true
   try {
-    const result = await submitReviewAnswer({ question_id: currentQuestion.value.id, user_answer: selectedAnswer.value })
-    currentResult.value = result
-    answers.value[currentQuestion.value.id] = result
+    const result = await submitReviewAnswer(currentQuestionId.value, selectedAnswer.value)
+    const savedResult = {
+      ...result,
+      user_answer: selectedAnswer.value
+    }
+    currentResult.value = savedResult
+    answers.value[currentQuestionId.value] = savedResult
     showResult.value = true
   } catch (error) {
     ElMessage.error(`提交答案失败：${error.response?.data?.detail || error.message}`)
@@ -289,7 +299,8 @@ const nextQuestion = () => {
 const prevQuestion = () => {
   if (currentIndex.value > 0) {
     currentIndex.value -= 1
-    const previous = answers.value[reviewQuestions.value[currentIndex.value].id]
+    const previousQuestionId = reviewQuestions.value[currentIndex.value]?.id
+    const previous = previousQuestionId ? answers.value[previousQuestionId] : null
     if (previous) {
       showResult.value = true
       selectedAnswer.value = previous.user_answer
