@@ -8,7 +8,8 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from database import get_db
-from models import PracticeRecord, Question, Subject, WrongQuestion
+from auth import get_current_user
+from models import PracticeRecord, Question, Subject, User, WrongQuestion
 
 router = APIRouter()
 
@@ -75,7 +76,7 @@ def get_wrong_question_threshold() -> int:
 
 
 @router.get("/settings")
-def get_settings():
+def get_settings(current_user: User = Depends(get_current_user)):
     return {
         "has_deepseek_api_key": bool(_get_deepseek_api_key()),
         "wrong_question_remove_threshold": get_wrong_question_threshold(),
@@ -83,7 +84,7 @@ def get_settings():
 
 
 @router.post("/settings/deepseek-key")
-def save_deepseek_key(request_body: ApiKeyRequest):
+def save_deepseek_key(request_body: ApiKeyRequest, current_user: User = Depends(get_current_user)):
     api_key = request_body.api_key.strip()
     if not api_key:
         raise HTTPException(status_code=400, detail="API Key 不能为空")
@@ -93,7 +94,7 @@ def save_deepseek_key(request_body: ApiKeyRequest):
 
 
 @router.post("/settings/wrong-threshold")
-def save_wrong_threshold(request_body: WrongThresholdRequest):
+def save_wrong_threshold(request_body: WrongThresholdRequest, current_user: User = Depends(get_current_user)):
     threshold = request_body.threshold
     if threshold < 1 or threshold > 10:
         raise HTTPException(status_code=400, detail="阈值必须在 1 到 10 之间")
@@ -103,18 +104,22 @@ def save_wrong_threshold(request_body: WrongThresholdRequest):
 
 
 @router.delete("/data")
-def clear_all_data(db: Session = Depends(get_db)):
-    db.query(PracticeRecord).delete()
-    db.query(WrongQuestion).delete()
-    db.query(Question).delete()
-    db.query(Subject).delete()
+def clear_all_data(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    db.query(PracticeRecord).filter(PracticeRecord.user_id == current_user.id).delete()
+    db.query(WrongQuestion).filter(WrongQuestion.user_id == current_user.id).delete()
+    db.query(Question).filter(Question.user_id == current_user.id).delete()
+    db.query(Subject).filter(Subject.user_id == current_user.id).delete()
     db.commit()
     return {"message": "所有数据已清空"}
 
 
 @router.post("/ai/explain", response_model=AiExplainResponse)
-def explain_question(request_body: AiExplainRequest, db: Session = Depends(get_db)):
-    question = db.query(Question).filter(Question.id == request_body.question_id).first()
+def explain_question(
+    request_body: AiExplainRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    question = db.query(Question).filter(Question.id == request_body.question_id, Question.user_id == current_user.id).first()
     if not question:
         raise HTTPException(status_code=404, detail="题目不存在")
 

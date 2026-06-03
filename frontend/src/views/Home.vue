@@ -1,252 +1,324 @@
 <template>
-  <div class="practice-page">
-    <header class="page-header">
-      <div>
-        <h1>{{ selectedSubject ? `${selectedSubject.name} - 练习模式` : '选择科目' }}</h1>
-        <p>{{ selectedSubject ? '逐题作答，也可以切换删题模式整理题库。' : '先创建或选择一个科目，然后开始练习。' }}</p>
+  <div class="app-layout">
+    <nav class="sidebar">
+      <div class="logo-section">
+        <el-icon class="logo-icon"><Document /></el-icon>
+        <h2>习题管理系统</h2>
       </div>
-      <div class="header-actions">
-        <el-button v-if="selectedSubject" :icon="Back" @click="backToSubjects">返回科目</el-button>
-        <el-button
-          v-if="selectedSubject && selectedSubject.name !== '未分类'"
-          type="danger"
-          plain
-          :icon="Delete"
-          :loading="subjectDeletingId === selectedSubject.id"
-          @click="handleDeleteSubject(selectedSubject)"
-        >
-          删除练习集
-        </el-button>
-        <el-button v-if="selectedSubject" :icon="Refresh" @click="resetPractice">重新开始</el-button>
-      </div>
-    </header>
 
-    <main v-if="!selectedSubject" class="subject-page">
-      <section class="create-subject">
-        <el-input v-model="newSubjectName" placeholder="例如：机器学习" @keyup.enter="handleCreateSubject" />
-        <el-button type="primary" :icon="Plus" :loading="subjectCreating" @click="handleCreateSubject">创建科目</el-button>
-      </section>
-
-      <section class="subject-grid">
+      <div class="nav-menu">
         <div
-          v-for="subject in subjects"
-          :key="subject.id"
-          class="subject-card"
-          role="button"
-          tabindex="0"
-          @click="enterSubject(subject)"
-          @keyup.enter="enterSubject(subject)"
-          @keyup.space="enterSubject(subject)"
+          v-for="item in navItems"
+          :key="item.path"
+          class="nav-item"
+          :class="{ active: route.path === item.path }"
+          @click="goToPath(item.path)"
         >
-          <div class="subject-card-head">
-            <strong>{{ subject.name }}</strong>
-            <el-button
-              v-if="subject.name !== '未分类'"
-              circle
-              size="small"
-              type="danger"
-              :icon="Delete"
-              :loading="subjectDeletingId === subject.id"
-              @click.stop="handleDeleteSubject(subject)"
-            />
-          </div>
-          <span>{{ subject.question_count }} 道题</span>
+          <el-icon><component :is="item.icon" /></el-icon>
+          <span>{{ item.label }}</span>
         </div>
-        <el-empty v-if="!subjects.length" description="暂无科目，请先创建一个科目" />
-      </section>
-    </main>
+      </div>
 
-    <template v-else>
-      <section class="type-filter">
-        <el-segmented v-model="selectedQuestionType" :options="questionTypeOptions" @change="loadQuestions" />
-      </section>
-
-      <main class="practice-layout">
-        <aside ref="questionListRef" class="question-list">
-          <div class="list-title">
-            <span>题目列表</span>
-            <el-switch
-              v-model="deleteMode"
-              inline-prompt
-              active-text="删"
-              inactive-text="练"
-            />
+      <div class="user-section">
+        <div class="user-info">
+          <div class="avatar">👤</div>
+          <div class="user-details">
+            <span class="username">{{ username }}</span>
+            <span class="logout-btn" @click="handleLogout">退出登录</span>
           </div>
-          <div v-if="deleteMode" class="batch-bar">
-            <span>已选 {{ batchSelectedIds.length }}</span>
-            <el-button size="small" @click="selectAllForBatch">全选</el-button>
-            <el-button size="small" @click="batchSelectedIds = []">清空</el-button>
-            <el-button size="small" type="danger" :disabled="!batchSelectedIds.length" :loading="batchDeleting" @click="batchDeleteSelected">
-              批量删除
+        </div>
+      </div>
+    </nav>
+
+    <div class="main-content">
+      <div class="practice-page">
+        <header class="page-header">
+          <div>
+            <h1>{{ selectedSubject ? `${selectedSubject.name} - 练习模式` : '选择科目' }}</h1>
+            <p>{{ selectedSubject ? '逐题作答，也可以切换删题模式整理题库。' : '先创建或选择一个科目，然后开始练习。' }}</p>
+          </div>
+          <div class="header-actions">
+            <el-button v-if="selectedSubject" :icon="Back" @click="backToSubjects">返回科目</el-button>
+            <el-button
+              v-if="selectedSubject && selectedSubject.name !== '未分类'"
+              type="danger"
+              plain
+              :icon="Delete"
+              :loading="subjectDeletingId === selectedSubject.id"
+              @click="handleDeleteSubject(selectedSubject)"
+            >
+              删除练习集
             </el-button>
+            <el-button v-if="selectedSubject" :icon="Refresh" @click="resetPractice">重新开始</el-button>
           </div>
-          <button
-            v-for="(q, index) in questions"
-            :key="q.id"
-            :data-index="index"
-            class="question-item"
-            :class="{ active: currentIndex === index, done: answers[index], deleting: deleteMode }"
-            @click="selectQuestion(index)"
-          >
-            <span class="question-number">{{ index + 1 }}</span>
-            <el-checkbox
-              v-if="deleteMode"
-              :model-value="batchSelectedIds.includes(q.id)"
-              @click.stop
-              @change="toggleBatchSelection(q.id)"
-            />
-            <span class="question-summary">{{ truncateContent(q.content) }}</span>
-            <el-icon v-if="q.is_important" class="important-star"><StarFilled /></el-icon>
-            <el-icon v-if="deleteMode" class="status wrong"><Delete /></el-icon>
-            <el-icon v-else-if="answers[index]?.isCorrect" class="status correct"><CircleCheck /></el-icon>
-            <el-icon v-else-if="answers[index]" class="status wrong"><CircleClose /></el-icon>
-          </button>
-        </aside>
+        </header>
 
-        <section class="question-panel">
-          <el-empty v-if="!currentQuestion" description="当前科目暂无题目，请先导入习题" />
-
-          <div v-else class="question-card">
-            <div class="question-meta">
-              <div class="type-editor">
-                <el-tag :type="deleteMode ? 'danger' : 'primary'">{{ deleteMode ? '删题模式' : questionTypeLabel(currentQuestion.type) }}</el-tag>
-                <el-select
-                  v-model="currentQuestion.type"
-                  size="small"
-                  class="question-type-select"
-                  :disabled="deleteMode || typeUpdating"
-                  @change="updateCurrentQuestionType"
-                >
-                  <el-option v-for="item in editableTypeOptions" :key="item.value" :label="item.label" :value="item.value" />
-                </el-select>
-              </div>
-              <div class="meta-right">
+        <main v-if="!selectedSubject" class="subject-page">
+          <transition name="plan-float">
+            <aside v-if="showPlanFloat" class="plan-float" :style="planFloatStyle">
+              <div class="plan-float-header" @pointerdown="startPlanFloatDrag">
+                <div>
+                  <p>今日学习计划</p>
+                  <h3>{{ formatPlanDate(todayPlanDate) }}</h3>
+                </div>
                 <el-button
-                  circle
-                  :type="currentQuestion.is_important ? 'warning' : 'default'"
-                  :icon="currentQuestion.is_important ? StarFilled : Star"
-                  :loading="importantUpdating"
-                  @click="toggleCurrentImportant"
+                  link
+                  :icon="planPanelCollapsed ? ArrowRight : ArrowLeft"
+                  @pointerdown.stop
+                  @click="planPanelCollapsed = !planPanelCollapsed"
                 />
-                <span>第 {{ currentIndex + 1 }} / {{ questions.length }} 题</span>
               </div>
-            </div>
 
-            <div class="question-content">{{ currentQuestion.content }}</div>
+              <div v-if="!planPanelCollapsed" class="plan-float-body">
+                <el-skeleton v-if="planLoading" :rows="3" animated />
+                <template v-else>
+                  <div v-if="todayPlanItems.length" class="plan-float-list">
+                    <div
+                      v-for="item in todayPlanItems"
+                      :key="item.id"
+                      class="plan-float-item"
+                      :class="{ completed: item.completed === 1 }"
+                    >
+                      <el-icon class="plan-float-status">
+                        <CircleCheck v-if="item.completed === 1" />
+                        <CircleClose v-else />
+                      </el-icon>
+                      <span>{{ item.content }}</span>
+                    </div>
+                  </div>
+                  <el-empty v-else description="今天还没有学习计划" :image-size="80" />
+                </template>
+              </div>
+            </aside>
+          </transition>
 
-            <el-radio-group
-              v-if="isOptionQuestion && !isMultiQuestion"
-              v-model="selectedAnswer"
-              class="options"
-              :disabled="hasAnswered || deleteMode"
+          <section class="create-subject">
+            <el-input v-model="newSubjectName" placeholder="例如：机器学习" @keyup.enter="handleCreateSubject" />
+            <el-button type="primary" :icon="Plus" :loading="subjectCreating" @click="handleCreateSubject">创建科目</el-button>
+          </section>
+
+          <section class="subject-grid">
+            <div
+              v-for="subject in subjects"
+              :key="subject.id"
+              class="subject-card"
+              role="button"
+              tabindex="0"
+              @click="enterSubject(subject)"
+              @keyup.enter="enterSubject(subject)"
+              @keyup.space="enterSubject(subject)"
             >
-              <label
-                v-for="item in answerOptions"
-                :key="item.key"
-                class="option-item"
-                :class="{
-                  correct: showResult && item.key === currentQuestion.answer,
-                  wrong: showResult && selectedAnswer === item.key && !answers[currentIndex]?.isCorrect
-                }"
-              >
-                <el-radio :label="item.key">
-                  <span class="option-key">{{ item.key }}</span>
-                  <span>{{ item.value }}</span>
-                </el-radio>
-              </label>
-            </el-radio-group>
-
-            <el-checkbox-group
-              v-else-if="isMultiQuestion"
-              v-model="selectedAnswerList"
-              class="options"
-              :disabled="hasAnswered || deleteMode"
-            >
-              <label
-                v-for="item in answerOptions"
-                :key="item.key"
-                class="option-item"
-                :class="{
-                  correct: showResult && currentMultiAnswerSet.has(item.key),
-                  wrong: showResult && selectedAnswerList.includes(item.key) && !currentMultiAnswerSet.has(item.key)
-                }"
-              >
-                <el-checkbox :label="item.key">
-                  <span class="option-key">{{ item.key }}</span>
-                  <span>{{ item.value }}</span>
-                </el-checkbox>
-              </label>
-            </el-checkbox-group>
-
-            <div v-else class="text-answer">
-              <el-input
-                v-model="selectedAnswer"
-                :type="['short', 'code'].includes(currentQuestion.type) ? 'textarea' : 'text'"
-                :rows="currentQuestion.type === 'code' ? 8 : currentQuestion.type === 'short' ? 5 : 1"
-                :disabled="hasAnswered || deleteMode"
-                placeholder="请输入你的答案"
-              />
-            </div>
-
-            <div v-if="showResult" class="result-box" :class="answers[currentIndex]?.isCorrect ? 'correct' : 'wrong'">
-              <strong>{{ answers[currentIndex]?.isCorrect ? '回答正确' : '回答错误' }}</strong>
-              <span>参考答案：{{ displayAnswer(currentQuestion) }}</span>
-              <el-button size="small" :icon="DocumentCopy" @click="openAnswerEditor">
-                修改答案
-              </el-button>
-            </div>
-
-            <div v-if="showExplanation && currentQuestion.explanation" class="explanation-box">
-              <h3>答案解析</h3>
-              <p>{{ currentQuestion.explanation }}</p>
-            </div>
-
-            <div v-if="aiExplanation" class="explanation-box ai">
-              <h3>AI 讲解</h3>
-              <p>{{ aiExplanation }}</p>
-            </div>
-
-            <div class="actions">
-              <template v-if="deleteMode">
-                <el-button type="danger" :icon="Delete" :loading="deleting" @click="deleteCurrentQuestion">
-                  删除本题
-                </el-button>
-                <el-button @click="deleteMode = false">退出删题模式</el-button>
-              </template>
-              <template v-else>
-                <el-button :icon="ArrowLeft" :disabled="currentIndex <= 0" @click="goToPreviousQuestion">
-                  上一题
-                </el-button>
-                <el-button :icon="ArrowRight" :disabled="currentIndex >= questions.length - 1" @click="goToNextQuestion">
-                  下一题
-                </el-button>
+              <div class="subject-card-head">
+                <strong>{{ subject.name }}</strong>
                 <el-button
-                  type="primary"
-                  :icon="Select"
-                  :disabled="!selectedAnswer || hasAnswered"
-                  :loading="loading"
-                  @click="submitCurrentAnswer"
-                >
-                  提交
-                </el-button>
-                <el-button :icon="Document" :disabled="!currentQuestion.explanation" @click="showExplanation = !showExplanation">
-                  {{ showExplanation ? '隐藏解析' : '显示解析' }}
-                </el-button>
-                <el-button :icon="ChatDotRound" :loading="aiLoading" @click="loadAiExplanation">
-                  AI讲解
-                </el-button>
-              </template>
+                  v-if="subject.name !== '未分类'"
+                  circle
+                  size="small"
+                  type="danger"
+                  :icon="Delete"
+                  :loading="subjectDeletingId === subject.id"
+                  @click.stop="handleDeleteSubject(subject)"
+                />
+              </div>
+              <span>{{ subject.question_count }} 道题</span>
             </div>
-          </div>
-        </section>
-      </main>
+            <el-empty v-if="!subjects.length" description="暂无科目，请先创建一个科目" />
+          </section>
+        </main>
 
-      <footer class="stats-bar">
-        <span>科目：{{ selectedSubject.name }}</span>
-        <span>已完成 {{ completedCount }} / {{ questions.length }}</span>
-        <span>正确率 {{ accuracyRate }}%</span>
-      </footer>
-    </template>
+        <template v-else>
+          <section class="type-filter">
+            <el-segmented v-model="selectedQuestionType" :options="questionTypeOptions" @change="loadQuestions" />
+          </section>
+
+          <main class="practice-layout">
+            <aside ref="questionListRef" class="question-list">
+              <div class="list-title">
+                <span>题目列表</span>
+                <el-switch
+                  v-model="deleteMode"
+                  inline-prompt
+                  active-text="删"
+                  inactive-text="练"
+                />
+              </div>
+              <div v-if="deleteMode" class="batch-bar">
+                <span>已选 {{ batchSelectedIds.length }}</span>
+                <el-button size="small" @click="selectAllForBatch">全选</el-button>
+                <el-button size="small" @click="batchSelectedIds = []">清空</el-button>
+                <el-button size="small" type="danger" :disabled="!batchSelectedIds.length" :loading="batchDeleting" @click="batchDeleteSelected">
+                  批量删除
+                </el-button>
+              </div>
+              <button
+                v-for="(q, index) in questions"
+                :key="q.id"
+                :data-index="index"
+                class="question-item"
+                :class="{ active: currentIndex === index, done: answers[index], deleting: deleteMode }"
+                @click="selectQuestion(index)"
+              >
+                <span class="question-number">{{ index + 1 }}</span>
+                <el-checkbox
+                  v-if="deleteMode"
+                  :model-value="batchSelectedIds.includes(q.id)"
+                  @click.stop
+                  @change="toggleBatchSelection(q.id)"
+                />
+                <span class="question-summary">{{ truncateContent(q.content) }}</span>
+                <el-icon v-if="q.is_important" class="important-star"><StarFilled /></el-icon>
+                <el-icon v-if="deleteMode" class="status wrong"><Delete /></el-icon>
+                <el-icon v-else-if="answers[index]?.isCorrect" class="status correct"><CircleCheck /></el-icon>
+                <el-icon v-else-if="answers[index]" class="status wrong"><CircleClose /></el-icon>
+              </button>
+            </aside>
+
+            <section class="question-panel">
+              <el-empty v-if="!currentQuestion" description="当前科目暂无题目，请先导入习题" />
+
+              <div v-else class="question-card">
+                <div class="question-meta">
+                  <div class="type-editor">
+                    <el-tag :type="deleteMode ? 'danger' : 'primary'">{{ deleteMode ? '删题模式' : questionTypeLabel(currentQuestion.type) }}</el-tag>
+                    <el-select
+                      v-model="currentQuestion.type"
+                      size="small"
+                      class="question-type-select"
+                      :disabled="deleteMode || typeUpdating"
+                      @change="updateCurrentQuestionType"
+                    >
+                      <el-option v-for="item in editableTypeOptions" :key="item.value" :label="item.label" :value="item.value" />
+                    </el-select>
+                  </div>
+                  <div class="meta-right">
+                    <el-button
+                      circle
+                      :type="currentQuestion.is_important ? 'warning' : 'default'"
+                      :icon="currentQuestion.is_important ? StarFilled : Star"
+                      :loading="importantUpdating"
+                      @click="toggleCurrentImportant"
+                    />
+                    <span>第 {{ currentIndex + 1 }} / {{ questions.length }} 题</span>
+                  </div>
+                </div>
+
+                <div class="question-content">{{ currentQuestion.content }}</div>
+
+                <el-radio-group
+                  v-if="isOptionQuestion && !isMultiQuestion"
+                  v-model="selectedAnswer"
+                  class="options"
+                  :disabled="hasAnswered || deleteMode"
+                >
+                  <label
+                    v-for="item in answerOptions"
+                    :key="item.key"
+                    class="option-item"
+                    :class="{
+                      correct: showResult && item.key === currentQuestion.answer,
+                      wrong: showResult && selectedAnswer === item.key && !answers[currentIndex]?.isCorrect
+                    }"
+                  >
+                    <el-radio :label="item.key">
+                      <span class="option-key">{{ item.key }}</span>
+                      <span>{{ item.value }}</span>
+                    </el-radio>
+                  </label>
+                </el-radio-group>
+
+                <el-checkbox-group
+                  v-else-if="isMultiQuestion"
+                  v-model="selectedAnswerList"
+                  class="options"
+                  :disabled="hasAnswered || deleteMode"
+                >
+                  <label
+                    v-for="item in answerOptions"
+                    :key="item.key"
+                    class="option-item"
+                    :class="{
+                      correct: showResult && currentMultiAnswerSet.has(item.key),
+                      wrong: showResult && selectedAnswerList.includes(item.key) && !currentMultiAnswerSet.has(item.key)
+                    }"
+                  >
+                    <el-checkbox :label="item.key">
+                      <span class="option-key">{{ item.key }}</span>
+                      <span>{{ item.value }}</span>
+                    </el-checkbox>
+                  </label>
+                </el-checkbox-group>
+
+                <div v-else class="text-answer">
+                  <el-input
+                    v-model="selectedAnswer"
+                    :type="['short', 'code'].includes(currentQuestion.type) ? 'textarea' : 'text'"
+                    :rows="currentQuestion.type === 'code' ? 8 : currentQuestion.type === 'short' ? 5 : 1"
+                    :disabled="hasAnswered || deleteMode"
+                    placeholder="请输入你的答案"
+                  />
+                </div>
+
+                <div v-if="showResult" class="result-box" :class="answers[currentIndex]?.isCorrect ? 'correct' : 'wrong'">
+                  <strong>{{ answers[currentIndex]?.isCorrect ? '回答正确' : '回答错误' }}</strong>
+                  <span>参考答案：{{ displayAnswer(currentQuestion) }}</span>
+                  <el-button size="small" :icon="DocumentCopy" @click="openAnswerEditor">
+                    修改答案
+                  </el-button>
+                </div>
+
+                <div v-if="showExplanation && currentQuestion.explanation" class="explanation-box">
+                  <h3>答案解析</h3>
+                  <p>{{ currentQuestion.explanation }}</p>
+                </div>
+
+                <div v-if="aiExplanation" class="explanation-box ai">
+                  <h3>AI 讲解</h3>
+                  <p>{{ aiExplanation }}</p>
+                </div>
+
+                <div class="actions">
+                  <template v-if="deleteMode">
+                    <el-button type="danger" :icon="Delete" :loading="deleting" @click="deleteCurrentQuestion">
+                      删除本题
+                    </el-button>
+                    <el-button @click="deleteMode = false">退出删题模式</el-button>
+                  </template>
+                  <template v-else>
+                    <el-button :icon="ArrowLeft" :disabled="currentIndex <= 0" @click="goToPreviousQuestion">
+                      上一题
+                    </el-button>
+                    <el-button :icon="ArrowRight" :disabled="currentIndex >= questions.length - 1" @click="goToNextQuestion">
+                      下一题
+                    </el-button>
+                    <el-button
+                      type="primary"
+                      :icon="Select"
+                      :disabled="!selectedAnswer || hasAnswered"
+                      :loading="loading"
+                      @click="submitCurrentAnswer"
+                    >
+                      提交
+                    </el-button>
+                    <el-button :icon="Document" :disabled="!currentQuestion.explanation" @click="showExplanation = !showExplanation">
+                      {{ showExplanation ? '隐藏解析' : '显示解析' }}
+                    </el-button>
+                    <el-button :icon="ChatDotRound" :loading="aiLoading" @click="loadAiExplanation">
+                      AI讲解
+                    </el-button>
+                  </template>
+                </div>
+              </div>
+            </section>
+          </main>
+
+          <footer class="stats-bar">
+            <span>科目：{{ selectedSubject.name }}</span>
+            <span>已完成 {{ completedCount }} / {{ questions.length }}</span>
+            <span>正确率 {{ accuracyRate }}%</span>
+          </footer>
+        </template>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -254,13 +326,31 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, ArrowRight, Back, ChatDotRound, CircleCheck, CircleClose, Delete, Document, DocumentCopy, Plus, Refresh, Select, Star, StarFilled } from '@element-plus/icons-vue'
+import {
+  ArrowLeft,
+  ArrowRight,
+  Back,
+  ChatDotRound,
+  CircleCheck,
+  CircleClose,
+  Delete,
+  Document,
+  DocumentCopy,
+  List,
+  Plus,
+  Refresh,
+  Select,
+  Setting,
+  Star,
+  StarFilled
+} from '@element-plus/icons-vue'
 import {
   batchDeleteQuestions,
   createSubject,
   deleteSubject as apiDeleteSubject,
   deleteQuestion as apiDeleteQuestion,
   getAiExplanation,
+  getPlanItemsByDate,
   getQuestions,
   getSubjects,
   submitAnswer as apiSubmitAnswer,
@@ -271,6 +361,18 @@ import {
 
 const route = useRoute()
 const router = useRouter()
+const username = ref(localStorage.getItem('auth_username') || '用户')
+const navItems = [
+  { path: '/', label: '练习模式', icon: Document },
+  { path: '/plan', label: '学习计划', icon: List },
+  { path: '/import', label: '导入习题', icon: Plus },
+  { path: '/wrong', label: '错题本', icon: CircleClose },
+  { path: '/review', label: '复习模式', icon: Refresh },
+  { path: '/important', label: '重点题', icon: Star },
+  { path: '/trash', label: '垃圾桶', icon: Delete },
+  { path: '/settings', label: '设置', icon: Setting }
+]
+
 const subjects = ref([])
 const selectedSubject = ref(null)
 const newSubjectName = ref('')
@@ -294,6 +396,113 @@ const aiExplanation = ref('')
 const selectedQuestionType = ref('all')
 const questionListRef = ref(null)
 const answerEditValue = ref('')
+const todayPlanDate = ref('')
+const todayPlanItems = ref([])
+const planLoading = ref(false)
+const planPanelCollapsed = ref(false)
+const planFloatPosition = ref({ left: 0, top: 0 })
+const planFloatDragging = ref(false)
+const planFloatDragOffset = ref({ x: 0, y: 0 })
+const PLAN_FLOAT_STORAGE_KEY = 'home_plan_float_position'
+
+const goToPath = (path) => {
+  if (route.path === path) return
+  router.push(path)
+}
+
+const handleLogout = () => {
+  localStorage.removeItem('auth_token')
+  localStorage.removeItem('auth_username')
+  sessionStorage.removeItem('auth_session_ok')
+  router.push('/auth/login')
+  ElMessage.success('已退出登录')
+}
+
+const getLocalDateString = () => {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+const formatPlanDate = (dateStr) => {
+  if (!dateStr) return ''
+  const date = new Date(`${dateStr}T00:00:00`)
+  return date.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric', weekday: 'long' })
+}
+
+const showPlanFloat = computed(() => !selectedSubject.value)
+const planFloatStyle = computed(() => ({
+  left: `${planFloatPosition.value.left}px`,
+  top: `${planFloatPosition.value.top}px`
+}))
+
+const clampPlanFloatPosition = (left, top) => {
+  const width = window.innerWidth
+  const height = window.innerHeight
+  const maxLeft = Math.max(width - 56, 16)
+  const maxTop = Math.max(height - 56, 16)
+  return {
+    left: Math.min(Math.max(left, 16), maxLeft),
+    top: Math.min(Math.max(top, 16), maxTop)
+  }
+}
+
+const initPlanFloatPosition = () => {
+  const fallback = clampPlanFloatPosition(window.innerWidth - 360, window.innerHeight - 320)
+  try {
+    const stored = localStorage.getItem(PLAN_FLOAT_STORAGE_KEY)
+    if (stored) {
+      const parsed = JSON.parse(stored)
+      if (typeof parsed?.left === 'number' && typeof parsed?.top === 'number') {
+        planFloatPosition.value = clampPlanFloatPosition(parsed.left, parsed.top)
+        return
+      }
+    }
+  } catch (error) {
+    // Ignore invalid stored coordinates and fall back below.
+  }
+  planFloatPosition.value = fallback
+}
+
+const savePlanFloatPosition = () => {
+  localStorage.setItem(PLAN_FLOAT_STORAGE_KEY, JSON.stringify(planFloatPosition.value))
+}
+
+const movePlanFloat = (event) => {
+  if (!planFloatDragging.value) return
+  planFloatPosition.value = clampPlanFloatPosition(
+    event.clientX - planFloatDragOffset.value.x,
+    event.clientY - planFloatDragOffset.value.y
+  )
+}
+
+const endPlanFloatDrag = () => {
+  if (!planFloatDragging.value) return
+  planFloatDragging.value = false
+  savePlanFloatPosition()
+  window.removeEventListener('pointermove', movePlanFloat)
+  window.removeEventListener('pointerup', endPlanFloatDrag)
+}
+
+const startPlanFloatDrag = (event) => {
+  if (event.button !== undefined && event.button !== 0) return
+  if (event.target?.closest?.('button')) return
+  const floatEl = event.currentTarget?.closest?.('.plan-float')
+  if (!floatEl) return
+
+  const rect = floatEl.getBoundingClientRect()
+  planFloatDragging.value = true
+  planFloatDragOffset.value = {
+    x: event.clientX - rect.left,
+    y: event.clientY - rect.top
+  }
+
+  window.addEventListener('pointermove', movePlanFloat)
+  window.addEventListener('pointerup', endPlanFloatDrag)
+  event.preventDefault()
+}
 
 const editableTypeOptions = [
   { label: '单选题', value: 'single' },
@@ -443,6 +652,7 @@ const backToSubjects = () => {
   questions.value = []
   router.replace({ path: '/' })
   loadSubjects()
+  loadTodayPlan()
 }
 
 const loadQuestions = async () => {
@@ -457,6 +667,25 @@ const loadQuestions = async () => {
     selectQuestion(questionIndex >= 0 ? questionIndex : 0)
   } catch (error) {
     ElMessage.error(`加载题目失败：${error.response?.data?.detail || error.message}`)
+  }
+}
+
+const loadTodayPlan = async () => {
+  planLoading.value = true
+  try {
+    todayPlanDate.value = getLocalDateString()
+    const items = await getPlanItemsByDate(todayPlanDate.value)
+    todayPlanItems.value = items.filter((item) => item.completed !== 1)
+  } catch (error) {
+    todayPlanItems.value = []
+  } finally {
+    planLoading.value = false
+  }
+}
+
+const refreshTodayPlan = () => {
+  if (!selectedSubject.value) {
+    loadTodayPlan()
   }
 }
 
@@ -694,7 +923,10 @@ watch(currentIndex, () => {
 
 onMounted(async () => {
   window.addEventListener('keydown', handlePracticeEnterKey)
+  window.addEventListener('resize', initPlanFloatPosition)
   await loadSubjects()
+  initPlanFloatPosition()
+  loadTodayPlan()
   const subjectId = Number(route.query.subject_id)
   if (subjectId) {
     const subject = subjects.value.find((item) => item.id === subjectId)
@@ -707,12 +939,132 @@ onMounted(async () => {
 
 onUnmounted(() => {
   window.removeEventListener('keydown', handlePracticeEnterKey)
+  window.removeEventListener('resize', initPlanFloatPosition)
+  window.removeEventListener('pointermove', movePlanFloat)
+  window.removeEventListener('pointerup', endPlanFloatDrag)
 })
 </script>
 
 <style scoped>
+.app-layout {
+  display: flex;
+  min-height: 100vh;
+}
+
+.sidebar {
+  width: 240px;
+  background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
+  color: white;
+  display: flex;
+  flex-direction: column;
+  position: fixed;
+  height: 100vh;
+  left: 0;
+  top: 0;
+  z-index: 100;
+}
+
+.logo-section {
+  padding: 24px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.logo-icon {
+  font-size: 40px;
+  color: #3b82f6;
+  margin-bottom: 12px;
+}
+
+.logo-section h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.nav-menu {
+  flex: 1;
+  padding: 16px 12px;
+  overflow-y: auto;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-bottom: 4px;
+  color: #94a3b8;
+}
+
+.nav-item:hover {
+  background: rgba(59, 130, 246, 0.1);
+  color: #e2e8f0;
+}
+
+.nav-item.active {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: white;
+}
+
+.nav-item .el-icon {
+  font-size: 20px;
+}
+
+.nav-item span {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.user-section {
+  padding: 16px 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.avatar {
+  font-size: 32px;
+}
+
+.user-details {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.username {
+  font-weight: 500;
+  font-size: 14px;
+}
+
+.logout-btn {
+  font-size: 12px;
+  color: #94a3b8;
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.logout-btn:hover {
+  color: #ef4444;
+}
+
+.main-content {
+  flex: 1;
+  margin-left: 240px;
+  min-height: 100vh;
+  background: linear-gradient(180deg, #f0f9ff 0%, #fafafa 100%);
+}
+
 .practice-page {
-  min-height: calc(100vh - 49px);
+  min-height: 100vh;
   display: flex;
   flex-direction: column;
 }
@@ -746,24 +1098,26 @@ onUnmounted(() => {
 }
 
 .subject-page {
-  padding: 20px;
+  max-width: 1180px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 20px 24px 24px;
 }
 
 .create-subject {
-  max-width: 720px;
+  max-width: none;
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 10px;
-  margin: 0 auto 20px;
-  padding: 18px;
+  margin: 0 0 20px;
+  padding: 20px;
   background: #fff;
   border: 1px solid #e4e7ed;
-  border-radius: 8px;
+  border-radius: 12px;
 }
 
 .subject-grid {
-  max-width: 980px;
-  margin: 0 auto;
+  max-width: none;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 14px;
@@ -776,7 +1130,7 @@ onUnmounted(() => {
   gap: 8px;
   padding: 18px;
   border: 1px solid #e4e7ed;
-  border-radius: 8px;
+  border-radius: 12px;
   background: #fff;
   text-align: left;
   cursor: pointer;
@@ -808,7 +1162,7 @@ onUnmounted(() => {
   display: grid;
   grid-template-columns: 340px minmax(0, 1fr);
   gap: 20px;
-  padding: 20px;
+  padding: 20px 24px 24px;
 }
 
 .type-filter {
@@ -816,10 +1170,113 @@ onUnmounted(() => {
   background: #f5f7fa;
 }
 
+.plan-float {
+  position: fixed;
+  right: 24px;
+  bottom: 92px;
+  width: 320px;
+  max-width: calc(100vw - 32px);
+  z-index: 180;
+  border-radius: 12px;
+  background: #fff;
+  color: #303133;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+  border: 1px solid #e4e7ed;
+  overflow: hidden;
+  user-select: none;
+  cursor: grab;
+}
+
+.plan-float-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid #ebeef5;
+  touch-action: none;
+  background: linear-gradient(180deg, #f8fbff 0%, #fff 100%);
+}
+
+.plan-float-header p {
+  margin: 0;
+  font-size: 12px;
+  color: #409eff;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.plan-float-header h3 {
+  margin: 4px 0 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #303133;
+}
+
+.plan-float-body {
+  padding: 12px 14px 14px;
+}
+
+.plan-float-list {
+  display: grid;
+  gap: 10px;
+  max-height: 190px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.plan-float-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #f8fafc;
+  color: #303133;
+  line-height: 1.5;
+}
+
+.plan-float-item.completed {
+  opacity: 0.6;
+  text-decoration: line-through;
+}
+
+.plan-float-status {
+  margin-top: 2px;
+  font-size: 16px;
+  color: #409eff;
+  flex-shrink: 0;
+}
+
+.plan-float-item.completed .plan-float-status {
+  color: #67c23a;
+}
+
+.plan-float-body::-webkit-scrollbar,
+.plan-float-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.plan-float-body::-webkit-scrollbar-track,
+.plan-float-list::-webkit-scrollbar-track {
+  background: #f5f7fa;
+}
+
+.plan-float-body::-webkit-scrollbar-thumb,
+.plan-float-list::-webkit-scrollbar-thumb {
+  background: #c0c4cc;
+  border-radius: 999px;
+}
+
+.plan-float-body::-webkit-scrollbar-thumb:hover,
+.plan-float-list::-webkit-scrollbar-thumb:hover {
+  background: #909399;
+}
+
 .question-list {
   background: #fff;
   border: 1px solid #e4e7ed;
-  border-radius: 8px;
+  border-radius: 12px;
   overflow-y: auto;
   overflow-x: hidden;
   scroll-behavior: smooth;
@@ -922,7 +1379,7 @@ onUnmounted(() => {
   margin: 0 auto;
   background: #fff;
   border: 1px solid #e4e7ed;
-  border-radius: 8px;
+  border-radius: 12px;
   padding: 24px;
 }
 
@@ -952,7 +1409,7 @@ onUnmounted(() => {
 
 .question-content {
   padding: 18px;
-  background: #fafafa;
+  background: #f8fafc;
   border-radius: 8px;
   font-size: 18px;
   line-height: 1.8;
@@ -1045,6 +1502,16 @@ onUnmounted(() => {
 }
 
 @media (max-width: 860px) {
+  .sidebar {
+    position: static;
+    width: 100%;
+    height: auto;
+  }
+
+  .main-content {
+    margin-left: 0;
+  }
+
   .practice-layout {
     grid-template-columns: 1fr;
   }
@@ -1055,6 +1522,13 @@ onUnmounted(() => {
 
   .create-subject {
     grid-template-columns: 1fr;
+  }
+
+  .page-header,
+  .stats-bar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
   }
 }
 </style>

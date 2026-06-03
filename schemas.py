@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 from datetime import datetime
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 
 class SubjectOut(BaseModel):
@@ -28,7 +28,7 @@ class QuestionCreate(BaseModel):
     content: str
     
     # 选项，字典格式 {"A": "选项A内容", "B": "选项B内容", ...}
-    options: Dict[str, str]
+    options: Dict[str, Any]
     
     # 正确答案（单个字母，如：A、B、C、D）
     answer: str
@@ -55,7 +55,7 @@ class QuestionOut(BaseModel):
     content: str
     
     # 选项
-    options: Dict[str, str]
+    options: Dict[str, Any]
     
     # 正确答案
     answer: str

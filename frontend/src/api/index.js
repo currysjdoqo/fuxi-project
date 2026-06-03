@@ -5,6 +5,44 @@ const api = axios.create({
   timeout: 10000
 })
 
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('auth_token')
+  if (token) {
+    config.headers = config.headers || {}
+    config.headers.Authorization = `Bearer ${token}`
+  }
+  return config
+})
+
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error?.response?.status === 401) {
+      localStorage.removeItem('auth_token')
+      localStorage.removeItem('auth_username')
+      if (window.location.pathname !== '/auth') {
+        window.location.href = '/auth'
+      }
+    }
+    return Promise.reject(error)
+  }
+)
+
+export const register = async (username, password) => {
+  const response = await api.post('/auth/register', { username, password })
+  return response.data
+}
+
+export const login = async (username, password) => {
+  const response = await api.post('/auth/login', { username, password })
+  return response.data
+}
+
+export const getCurrentUser = async () => {
+  const response = await api.get('/auth/me')
+  return response.data
+}
+
 export const getSubjects = async () => {
   const response = await api.get('/subjects')
   return response.data
@@ -30,6 +68,26 @@ export const importQuestions = async (text, subjectId) => {
 
 export const parseQuestions = async (text) => {
   const response = await api.post('/import/parse', { text })
+  return response.data
+}
+
+export const extractTextFromFile = async (file) => {
+  const formData = new FormData()
+  formData.append('file', file)
+  const response = await api.post('/import/extract-file', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  })
+  return response.data
+}
+
+export const extractMultipleFiles = async (files) => {
+  const formData = new FormData()
+  files.forEach(file => {
+    formData.append('files', file)
+  })
+  const response = await api.post('/import/extract-multiple', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  })
   return response.data
 }
 
@@ -80,6 +138,13 @@ export const updateQuestionImportant = async (questionId, isImportant) => {
 export const updateQuestionAnswer = async (questionId, answer) => {
   const response = await api.patch(`/questions/${questionId}/answer`, {
     answer
+  })
+  return response.data
+}
+
+export const updateQuestionOptions = async (questionId, options) => {
+  const response = await api.patch(`/questions/${questionId}/options`, {
+    options
   })
   return response.data
 }
@@ -162,6 +227,32 @@ export const clearAllData = async () => {
 
 export const getAiExplanation = async (questionId) => {
   const response = await api.post('/ai/explain', { question_id: questionId })
+  return response.data
+}
+
+// 计划相关API
+export const createPlanItem = async (date, content) => {
+  const response = await api.post('/plan/items', { date, content })
+  return response.data
+}
+
+export const getPlanItemsByDate = async (date) => {
+  const response = await api.get(`/plan/items/${date}`)
+  return response.data
+}
+
+export const getPlanItemsByRange = async (startDate, endDate) => {
+  const response = await api.get(`/plan/items/range/${startDate}/${endDate}`)
+  return response.data
+}
+
+export const updatePlanItem = async (itemId, data) => {
+  const response = await api.put(`/plan/items/${itemId}`, data)
+  return response.data
+}
+
+export const deletePlanItem = async (itemId) => {
+  const response = await api.delete(`/plan/items/${itemId}`)
   return response.data
 }
 

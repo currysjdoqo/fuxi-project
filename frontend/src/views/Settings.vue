@@ -1,60 +1,129 @@
 <template>
-  <div class="settings-page">
-    <header class="page-header">
-      <div>
-        <h1>设置</h1>
-        <p>配置 AI 讲解和数据管理。</p>
+  <div class="app-layout">
+    <nav class="sidebar">
+      <div class="logo-section">
+        <svg class="logo-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M2 17L12 22L22 17" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M2 12L12 17L22 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <h2>习题管理系统</h2>
       </div>
-    </header>
-
-    <main class="settings-content">
-      <section class="settings-card">
-        <h2>DeepSeek API Key</h2>
-        <p class="muted">
-          后端会保存到项目根目录的 .env 文件。当前状态：{{ settings?.has_deepseek_api_key ? '已配置' : '未配置' }}
-        </p>
-        <div class="key-row">
-          <el-input
-            v-model="apiKey"
-            type="password"
-            show-password
-            placeholder="sk-..."
-            autocomplete="off"
-          />
-          <el-button type="primary" :icon="Check" :loading="saving" @click="saveKey">保存</el-button>
+      <div class="nav-menu">
+        <div class="nav-item" :class="{ active: $route.path === '/' }" @click="$router.push('/')">
+          <el-icon><Document /></el-icon>
+          <span>练习模式</span>
         </div>
-      </section>
-
-      <section class="settings-card">
-        <h2>错题移除阈值</h2>
-        <p class="muted">答对错题达到该次数后，才会从错题本移除（1-10）。</p>
-        <div class="threshold-row">
-          <el-input-number v-model="wrongThreshold" :min="1" :max="10" />
-          <el-button type="primary" :icon="Check" :loading="savingThreshold" @click="saveThreshold">保存</el-button>
+        <div class="nav-item" :class="{ active: $route.path === '/plan' }" @click="$router.push('/plan')">
+          <el-icon><List /></el-icon>
+          <span>学习计划</span>
         </div>
-      </section>
+        <div class="nav-item" :class="{ active: $route.path === '/import' }" @click="$router.push('/import')">
+          <el-icon><Plus /></el-icon>
+          <span>导入习题</span>
+        </div>
+        <div class="nav-item" :class="{ active: $route.path === '/wrong' }" @click="$router.push('/wrong')">
+          <el-icon><CircleClose /></el-icon>
+          <span>错题本</span>
+        </div>
+        <div class="nav-item" :class="{ active: $route.path === '/review' }" @click="$router.push('/review')">
+          <el-icon><Refresh /></el-icon>
+          <span>复习模式</span>
+        </div>
+        <div class="nav-item" :class="{ active: $route.path === '/important' }" @click="$router.push('/important')">
+          <el-icon><Star /></el-icon>
+          <span>重点题</span>
+        </div>
+        <div class="nav-item" :class="{ active: $route.path === '/trash' }" @click="$router.push('/trash')">
+          <el-icon><Delete /></el-icon>
+          <span>垃圾桶</span>
+        </div>
+        <div class="nav-item" :class="{ active: $route.path === '/settings' }" @click="$router.push('/settings')">
+          <el-icon><Setting /></el-icon>
+          <span>设置</span>
+        </div>
+      </div>
+      <div class="user-section">
+        <div class="user-info">
+          <div class="avatar">👤</div>
+          <div class="user-details">
+            <span class="username">{{ username }}</span>
+            <span class="logout-btn" @click="handleLogout">退出登录</span>
+          </div>
+        </div>
+      </div>
+    </nav>
 
-      <section class="settings-card danger">
-        <h2>清空所有数据</h2>
-        <p class="muted">会删除题目、练习记录和错题本，操作不可撤销。</p>
-        <el-button type="danger" :icon="Delete" :loading="clearing" @click="clearData">清空所有数据</el-button>
-      </section>
-    </main>
+    <div class="main-content">
+      <div class="settings-page">
+        <header class="page-header">
+          <div>
+            <h1>设置</h1>
+            <p>配置 AI 讲解和数据管理。</p>
+          </div>
+        </header>
+
+        <main class="settings-content">
+          <section class="settings-card">
+            <h2>DeepSeek API Key</h2>
+            <p class="muted">
+              后端会保存到项目根目录的 .env 文件。当前状态：{{ settings?.has_deepseek_api_key ? '已配置' : '未配置' }}
+            </p>
+            <div class="key-row">
+              <el-input
+                v-model="apiKey"
+                type="password"
+                show-password
+                placeholder="sk-..."
+                autocomplete="off"
+              />
+              <el-button type="primary" :icon="Check" :loading="saving" @click="saveKey">保存</el-button>
+            </div>
+          </section>
+
+          <section class="settings-card">
+            <h2>错题移除阈值</h2>
+            <p class="muted">答对错题达到该次数后，才会从错题本移除（1-10）。</p>
+            <div class="threshold-row">
+              <el-input-number v-model="wrongThreshold" :min="1" :max="10" />
+              <el-button type="primary" :icon="Check" :loading="savingThreshold" @click="saveThreshold">保存</el-button>
+            </div>
+          </section>
+
+          <section class="settings-card danger">
+            <h2>清空所有数据</h2>
+            <p class="muted">会删除题目、练习记录和错题本，操作不可撤销。</p>
+            <el-button type="danger" :icon="Delete" :loading="clearing" @click="clearData">清空所有数据</el-button>
+          </section>
+        </main>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
 import { onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Check, Delete } from '@element-plus/icons-vue'
+import { Check, Delete, Document, Plus, Refresh, Star, Setting, CircleClose } from '@element-plus/icons-vue'
 import { clearAllData, getSettings, saveDeepSeekKey, saveWrongThreshold } from '../api'
 
+const router = useRouter()
+const username = ref(localStorage.getItem('auth_username') || '用户')
 const settings = ref(null)
 const apiKey = ref('')
 const saving = ref(false)
 const clearing = ref(false)
 const wrongThreshold = ref(1)
 const savingThreshold = ref(false)
+
+const handleLogout = () => {
+  localStorage.removeItem('auth_token')
+  localStorage.removeItem('auth_username')
+  sessionStorage.removeItem('auth_session_ok')
+  router.push('/auth/login')
+  ElMessage.success('已退出登录')
+}
 
 const loadSettings = async () => {
   try {
@@ -86,8 +155,8 @@ const saveKey = async () => {
   saving.value = true
   try {
     await saveDeepSeekKey(apiKey.value.trim())
-    apiKey.value = ''
     ElMessage.success('API Key 已保存')
+    apiKey.value = ''
     await loadSettings()
   } catch (error) {
     ElMessage.error(`保存失败：${error.response?.data?.detail || error.message}`)
@@ -98,15 +167,11 @@ const saveKey = async () => {
 
 const clearData = async () => {
   try {
-    await ElMessageBox.confirm('确认删除所有题目、练习记录和错题本？', '清空所有数据', {
-      type: 'warning',
-      confirmButtonText: '确认清空',
-      cancelButtonText: '取消'
-    })
+    await ElMessageBox.confirm('确定要清空所有数据吗？此操作不可撤销！', '警告', { type: 'warning' })
     clearing.value = true
     await clearAllData()
-    localStorage.removeItem('exercise-review-session')
-    ElMessage.success('所有数据已清空')
+    ElMessage.success('数据已清空')
+    await loadSettings()
   } catch (error) {
     if (error !== 'cancel') {
       ElMessage.error(`清空失败：${error.response?.data?.detail || error.message}`)
@@ -120,11 +185,132 @@ onMounted(loadSettings)
 </script>
 
 <style scoped>
+.app-layout {
+  display: flex;
+  min-height: 100vh;
+}
+
+.sidebar {
+  width: 240px;
+  background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
+  color: white;
+  display: flex;
+  flex-direction: column;
+  position: fixed;
+  height: 100vh;
+  left: 0;
+  top: 0;
+  z-index: 100;
+}
+
+.logo-section {
+  padding: 24px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.logo-section .logo-icon {
+  width: 40px;
+  height: 40px;
+  color: #3b82f6;
+  margin-bottom: 12px;
+}
+
+.logo-section h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.nav-menu {
+  flex: 1;
+  padding: 16px 12px;
+  overflow-y: auto;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-bottom: 4px;
+  color: #94a3b8;
+}
+
+.nav-item:hover {
+  background: rgba(59, 130, 246, 0.1);
+  color: #e2e8f0;
+}
+
+.nav-item.active {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: white;
+}
+
+.nav-item .el-icon {
+  font-size: 20px;
+}
+
+.nav-item span {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.user-section {
+  padding: 16px 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.avatar {
+  font-size: 32px;
+}
+
+.user-details {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.username {
+  font-weight: 500;
+  font-size: 14px;
+}
+
+.logout-btn {
+  font-size: 12px;
+  color: #94a3b8;
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.logout-btn:hover {
+  color: #ef4444;
+}
+
+.main-content {
+  flex: 1;
+  margin-left: 240px;
+  min-height: 100vh;
+  background: linear-gradient(180deg, #f0f9ff 0%, #fafafa 100%);
+}
+
 .settings-page {
-  min-height: calc(100vh - 49px);
+  min-height: 100vh;
 }
 
 .page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   padding: 18px 24px;
   background: #fff;
   border-bottom: 1px solid #e4e7ed;
@@ -136,17 +322,15 @@ onMounted(loadSettings)
   color: #303133;
 }
 
-.page-header p,
-.muted {
+.page-header p {
   margin: 0;
   color: #909399;
   font-size: 13px;
 }
 
 .settings-content {
-  max-width: 780px;
-  margin: 20px auto;
-  padding: 0 20px;
+  max-width: 720px;
+  margin: 24px auto;
   display: grid;
   gap: 16px;
 }
@@ -154,37 +338,33 @@ onMounted(loadSettings)
 .settings-card {
   background: #fff;
   border: 1px solid #e4e7ed;
-  border-radius: 8px;
-  padding: 20px;
+  border-radius: 12px;
+  padding: 24px;
 }
 
 .settings-card h2 {
-  margin: 0 0 8px;
+  margin: 0 0 12px;
   font-size: 18px;
   color: #303133;
 }
 
-.settings-card.danger {
-  border-color: #f3d0d0;
+.settings-card.danger h2 {
+  color: #f56c6c;
 }
 
-.key-row {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 10px;
-  margin-top: 16px;
+.muted {
+  color: #909399;
+  margin: 0 0 16px;
+  font-size: 14px;
+  line-height: 1.6;
 }
 
-.threshold-row {
+.key-row, .threshold-row {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 16px;
+  gap: 12px;
 }
 
-@media (max-width: 680px) {
-  .key-row {
-    grid-template-columns: 1fr;
-  }
+.key-row .el-input {
+  flex: 1;
 }
 </style>

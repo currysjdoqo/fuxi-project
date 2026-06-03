@@ -1,15 +1,12 @@
 <template>
-  <div id="app">
-    <nav class="app-nav">
-      <router-link to="/">练习</router-link>
-      <router-link to="/import">导入</router-link>
-      <router-link to="/wrong">错题本</router-link>
-      <router-link to="/important">重点题</router-link>
-      <router-link to="/trash">垃圾桶</router-link>
-      <router-link to="/review">复习</router-link>
-      <router-link to="/settings">设置</router-link>
-    </nav>
-    <router-view />
+  <div class="app-container">
+    <router-view v-slot="{ Component }">
+      <transition name="fade" mode="out-in">
+        <keep-alive>
+          <component :is="Component" />
+        </keep-alive>
+      </transition>
+    </router-view>
   </div>
 </template>
 
@@ -17,6 +14,14 @@
 </script>
 
 <style>
+:root {
+  --primary-color: #3b82f6;
+  --success-color: #22c55e;
+  --warning-color: #f59e0b;
+  --danger-color: #ef4444;
+  --info-color: #06b6d4;
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -24,31 +29,48 @@
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  background: #f5f7fa;
-}
-
-.app-nav {
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  display: flex;
-  gap: 8px;
-  padding: 10px 24px;
-  background: #fff;
-  border-bottom: 1px solid #e4e7ed;
-}
-
-.app-nav a {
-  color: #606266;
-  text-decoration: none;
-  padding: 8px 12px;
-  border-radius: 6px;
+  font-family: 'Avenir Next', 'PingFang SC', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
   font-size: 14px;
+  color: #1e293b;
+  background-color: #f5f7fa;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-.app-nav a.router-link-active {
-  color: #fff;
-  background: #409eff;
+#app {
+  min-height: 100vh;
+}
+
+.app-container {
+  min-height: 100vh;
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
 }
 </style>
