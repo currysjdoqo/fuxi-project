@@ -2,7 +2,7 @@ import axios from 'axios'
 
 const api = axios.create({
   baseURL: '/api',
-  timeout: 10000
+  timeout: 30000
 })
 
 api.interceptors.request.use((config) => {
@@ -168,10 +168,18 @@ export const permanentlyDeleteQuestion = async (questionId) => {
   return response.data
 }
 
-export const submitAnswer = async (questionId, userAnswer) => {
+export const submitAnswer = async (questionId, userAnswer, selfEvaluation = null) => {
   const response = await api.post('/practice/submit', {
     question_id: questionId,
-    user_answer: userAnswer
+    user_answer: userAnswer,
+    self_evaluation: selfEvaluation
+  })
+  return response.data
+}
+
+export const batchSubmitAnswers = async (submissions) => {
+  const response = await api.post('/practice/batch-submit', {
+    submissions
   })
   return response.data
 }
@@ -199,15 +207,15 @@ export const generateReviewQuestions = async (count, subjectId = null) => {
 export const submitReviewAnswer = async (questionIdOrPayload, userAnswer) => {
   const payload = typeof questionIdOrPayload === 'object' && questionIdOrPayload !== null
     ? {
-        question_id: questionIdOrPayload.question_id,
-        user_answer: questionIdOrPayload.user_answer,
-        is_review_mode: questionIdOrPayload.is_review_mode ?? true
-      }
+      question_id: questionIdOrPayload.question_id,
+      user_answer: questionIdOrPayload.user_answer,
+      is_review_mode: questionIdOrPayload.is_review_mode ?? true
+    }
     : {
-        question_id: questionIdOrPayload,
-        user_answer: userAnswer,
-        is_review_mode: true
-      }
+      question_id: questionIdOrPayload,
+      user_answer: userAnswer,
+      is_review_mode: true
+    }
 
   const response = await api.post('/review/submit', {
     question_id: payload.question_id,

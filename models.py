@@ -45,7 +45,7 @@ class PracticeRecord(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=True)
-    question_id = Column(Integer, ForeignKey("questions.id"), nullable=False)
+    question_id = Column(Integer, ForeignKey("questions.id"), nullable=False, index=True)
     user_answer = Column(String, nullable=False)
     is_correct = Column(Integer, nullable=False)
     practiced_at = Column(DateTime, default=datetime.utcnow)

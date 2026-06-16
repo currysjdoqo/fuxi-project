@@ -18,6 +18,7 @@ router = APIRouter()
 class SubmitRequest(BaseModel):
     question_id: int
     user_answer: str
+    self_evaluation: Optional[bool] = None
 
 
 class SubmitResponse(BaseModel):
@@ -26,6 +27,8 @@ class SubmitResponse(BaseModel):
     explanation: Optional[str]
     removed_from_wrong: bool = False
     remaining_to_remove: int = 0
+    self_evaluation_required: bool = False
+    evaluated: bool = True
 
 
 class QuestionTypeUpdateRequest(BaseModel):
@@ -46,6 +49,10 @@ class QuestionOptionsUpdateRequest(BaseModel):
 
 class BatchDeleteRequest(BaseModel):
     question_ids: List[int]
+
+
+class BatchSubmitRequest(BaseModel):
+    submissions: List[SubmitRequest]
 
 
 def normalize_answer(answer: str) -> str:
@@ -258,7 +265,18 @@ def submit_practice(request: SubmitRequest, db: Session = Depends(get_db), curre
     if not question:
         raise HTTPException(status_code=404, detail="题目不存在")
 
-    is_correct = is_answer_correct(question.type, request.user_answer, question.answer)
+    if question.type == "fill" and request.self_evaluation is None:
+        return {
+            "is_correct": False,
+            "correct_answer": question.answer,
+            "explanation": question.explanation,
+            "removed_from_wrong": False,
+            "remaining_to_remove": 0,
+            "self_evaluation_required": True,
+            "evaluated": False,
+        }
+
+    is_correct = request.self_evaluation if question.type == "fill" else is_answer_correct(question.type, request.user_answer, question.answer)
     practice_record = PracticeRecord(
         user_id=current_user.id,
         question_id=request.question_id,
@@ -296,4 +314,78 @@ def submit_practice(request: SubmitRequest, db: Session = Depends(get_db), curre
         "explanation": question.explanation,
         "removed_from_wrong": removed_from_wrong,
         "remaining_to_remove": remaining_to_remove,
+        "self_evaluation_required": False,
+        "evaluated": True,
     }
+
+
+@router.post("/practice/batch-submit")
+def batch_submit_practice(request: BatchSubmitRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    threshold = get_wrong_question_threshold()
+    results = []
+    
+    for submission in request.submissions:
+        question = get_user_question(db, current_user.id, submission.question_id)
+        if not question:
+            results.append({
+                "question_id": submission.question_id,
+                "error": "题目不存在"
+            })
+            continue
+            
+        if question.type == "fill" and submission.self_evaluation is None:
+            results.append({
+                "question_id": submission.question_id,
+                "is_correct": False,
+                "correct_answer": question.answer,
+                "explanation": question.explanation,
+                "removed_from_wrong": False,
+                "remaining_to_remove": 0,
+                "self_evaluation_required": True,
+                "evaluated": False,
+            })
+            continue
+            
+        is_correct = submission.self_evaluation if question.type == "fill" else is_answer_correct(question.type, submission.user_answer, question.answer)
+        practice_record = PracticeRecord(
+            user_id=current_user.id,
+            question_id=submission.question_id,
+            user_answer=submission.user_answer,
+            is_correct=1 if is_correct else 0,
+        )
+        db.add(practice_record)
+        
+        removed_from_wrong = False
+        remaining_to_remove = 0
+        
+        wrong_question = db.query(WrongQuestion).filter(WrongQuestion.question_id == submission.question_id, WrongQuestion.user_id == current_user.id).first()
+        if not is_correct:
+            if wrong_question:
+                wrong_question.review_count = wrong_question.review_count + 1
+                wrong_question.correct_count = 0
+                wrong_question.last_reviewed_at = datetime.utcnow()
+            else:
+                db.add(WrongQuestion(user_id=current_user.id, question_id=submission.question_id, correct_count=0))
+        else:
+            if wrong_question:
+                wrong_question.correct_count = (wrong_question.correct_count or 0) + 1
+                wrong_question.last_reviewed_at = datetime.utcnow()
+                if wrong_question.correct_count >= threshold:
+                    db.delete(wrong_question)
+                    removed_from_wrong = True
+                else:
+                    remaining_to_remove = threshold - wrong_question.correct_count
+        
+        results.append({
+            "question_id": submission.question_id,
+            "is_correct": is_correct,
+            "correct_answer": question.answer,
+            "explanation": question.explanation,
+            "removed_from_wrong": removed_from_wrong,
+            "remaining_to_remove": remaining_to_remove,
+            "self_evaluation_required": False,
+            "evaluated": True,
+        })
+    
+    db.commit()
+    return {"results": results}

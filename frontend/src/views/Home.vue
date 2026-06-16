@@ -1,12 +1,35 @@
 <template>
-  <div class="app-layout">
-    <nav class="sidebar">
+  <div class="app-layout" :class="{ 'sidebar-collapsed': sidebarCollapsed, 'mobile-nav-open': mobileNavOpen }">
+    <div v-if="mobileNavOpen" class="mobile-nav-mask" @click="closeMobileNav"></div>
+    <nav class="sidebar" :class="{ collapsed: sidebarCollapsed, open: mobileNavOpen }">
       <div class="logo-section">
-        <el-icon class="logo-icon"><Document /></el-icon>
-        <h2>习题管理系统</h2>
+        <div class="logo-group">
+          <el-icon class="logo-icon"><Document /></el-icon>
+          <div v-if="!sidebarCollapsed || isMobileNav" class="logo-copy">
+            <h2>??????</h2>
+            <span>Practice Workspace</span>
+          </div>
+        </div>
+        <el-button
+          v-if="!isMobileNav"
+          circle
+          text
+          class="sidebar-toggle desktop-toggle"
+          :icon="sidebarCollapsed ? Expand : Fold"
+          @click="toggleSidebar"
+        />
+        <el-button
+          v-else
+          circle
+          text
+          class="sidebar-toggle mobile-close"
+          :icon="Close"
+          @click="closeMobileNav"
+        />
       </div>
 
       <div class="nav-menu">
+        <div class="nav-section-title" v-if="!sidebarCollapsed || isMobileNav">功能导航</div>
         <div
           v-for="item in navItems"
           :key="item.path"
@@ -15,14 +38,14 @@
           @click="goToPath(item.path)"
         >
           <el-icon><component :is="item.icon" /></el-icon>
-          <span>{{ item.label }}</span>
+          <span v-if="!sidebarCollapsed || isMobileNav">{{ item.label }}</span>
         </div>
       </div>
 
       <div class="user-section">
         <div class="user-info">
           <div class="avatar">👤</div>
-          <div class="user-details">
+          <div v-if="!sidebarCollapsed || isMobileNav" class="user-details">
             <span class="username">{{ username }}</span>
             <span class="logout-btn" @click="handleLogout">退出登录</span>
           </div>
@@ -33,7 +56,20 @@
     <div class="main-content">
       <div class="practice-page">
         <header class="page-header">
-          <div>
+          <div class="header-main">
+            <div class="header-nav">
+              <el-button
+                circle
+                text
+                class="header-nav-btn"
+                :icon="isMobileNav ? Menu : (sidebarCollapsed ? Expand : Fold)"
+                @click="isMobileNav ? toggleMobileNav() : toggleSidebar()"
+              />
+              <div v-if="selectedSubject" class="subject-chip">
+                <el-icon><Document /></el-icon>
+                <span>{{ selectedSubject.name }}</span>
+              </div>
+            </div>
             <h1>{{ selectedSubject ? `${selectedSubject.name} - 练习模式` : '选择科目' }}</h1>
             <p>{{ selectedSubject ? '逐题作答，也可以切换删题模式整理题库。' : '先创建或选择一个科目，然后开始练习。' }}</p>
           </div>
@@ -151,7 +187,26 @@
 
         <template v-else>
           <section class="type-filter">
-            <el-segmented v-model="selectedQuestionType" :options="questionTypeOptions" @change="loadQuestions" />
+            <div class="practice-toolbar">
+              <el-segmented v-model="selectedQuestionType" :options="questionTypeOptions" @change="loadQuestions" />
+              <div class="practice-mode-controls">
+                <el-radio-group v-model="practiceMode" @change="applyPracticeQuestions()">
+                  <el-radio-button label="sequential">顺序练习</el-radio-button>
+                  <el-radio-button label="random">随机抽题</el-radio-button>
+                </el-radio-group>
+                <el-input-number
+                  v-model="practiceQuestionCount"
+                  :min="1"
+                  :max="Math.max(allQuestions.length, 1)"
+                  :step="1"
+                  controls-position="right"
+                  class="count-input"
+                />
+                <el-button :disabled="!allQuestions.length" @click="applyPracticeQuestions()">
+                  {{ practiceMode === 'random' ? '重新抽题' : '应用数量' }}
+                </el-button>
+              </div>
+            </div>
           </section>
 
           <main class="practice-layout">
@@ -191,6 +246,7 @@
                 <span class="question-summary">{{ truncateContent(q.content) }}</span>
                 <el-icon v-if="q.is_important" class="important-star"><StarFilled /></el-icon>
                 <el-icon v-if="deleteMode" class="status wrong"><Delete /></el-icon>
+                <el-icon v-else-if="answers[index]?.isPending" class="status pending"><Select /></el-icon>
                 <el-icon v-else-if="answers[index]?.isCorrect" class="status correct"><CircleCheck /></el-icon>
                 <el-icon v-else-if="answers[index]" class="status wrong"><CircleClose /></el-icon>
               </button>
@@ -311,9 +367,10 @@
                   />
                 </div>
 
-                <div v-if="showResult" class="result-box" :class="answers[currentIndex]?.isCorrect ? 'correct' : 'wrong'">
-                  <strong>{{ answers[currentIndex]?.isCorrect ? '回答正确' : '回答错误' }}</strong>
+                <div v-if="showResult" class="result-box" :class="resultBoxClass">
+                  <strong>{{ resultTitle }}</strong>
                   <span>参考答案：{{ displayAnswer(currentQuestion) }}</span>
+                  <span v-if="showSelfEvaluationActions">填空题无法稳定自动判题，请根据参考答案自行评价。</span>
                   <el-button size="small" :icon="DocumentCopy" @click="openAnswerEditor">
                     修改答案
                   </el-button>
@@ -352,11 +409,36 @@
                     >
                       提交
                     </el-button>
+                    <el-button
+                      v-if="pendingSubmissions.length > 0"
+                      type="success"
+                      :loading="batchSubmitting"
+                      @click="submitAllPending"
+                    >
+                      批量提交 ({{ pendingSubmissions.length }})
+                    </el-button>
                     <el-button :icon="Document" :disabled="!currentQuestion.explanation" @click="showExplanation = !showExplanation">
                       {{ showExplanation ? '隐藏解析' : '显示解析' }}
                     </el-button>
                     <el-button :icon="ChatDotRound" :loading="aiLoading" @click="loadAiExplanation">
                       AI讲解
+                    </el-button>
+                    <el-button
+                      v-if="showSelfEvaluationActions"
+                      type="success"
+                      :loading="loading"
+                      @click="submitSelfEvaluation(true)"
+                    >
+                      我答对了
+                    </el-button>
+                    <el-button
+                      v-if="showSelfEvaluationActions"
+                      type="danger"
+                      plain
+                      :loading="loading"
+                      @click="submitSelfEvaluation(false)"
+                    >
+                      我答错了
                     </el-button>
                   </template>
                 </div>
@@ -392,6 +474,10 @@ import {
   List,
   Plus,
   Refresh,
+  Fold,
+  Expand,
+  Menu,
+  Close,
   Select,
   Setting,
   Star,
@@ -399,6 +485,7 @@ import {
 } from '@element-plus/icons-vue'
 import {
   batchDeleteQuestions,
+  batchSubmitAnswers,
   createSubject,
   deleteSubject as apiDeleteSubject,
   deleteQuestion as apiDeleteQuestion,
@@ -432,6 +519,7 @@ const selectedSubject = ref(null)
 const newSubjectName = ref('')
 const subjectCreating = ref(false)
 const subjectDeletingId = ref(null)
+const allQuestions = ref([])
 const questions = ref([])
 const currentIndex = ref(0)
 const selectedAnswer = ref('')
@@ -460,9 +548,20 @@ const planFloatDragging = ref(false)
 const planFloatDragOffset = ref({ x: 0, y: 0 })
 const PLAN_FLOAT_STORAGE_KEY = 'home_plan_float_position'
 const PLAN_FLOAT_COLLAPSED_KEY = 'home_plan_float_collapsed'
+const SIDEBAR_COLLAPSED_KEY = 'home_sidebar_collapsed'
+const pendingSubmissions = ref([])
+const batchSubmitting = ref(false)
+const practiceMode = ref('sequential')
+const practiceQuestionCount = ref(20)
+const sidebarCollapsed = ref(false)
+const mobileNavOpen = ref(false)
+const viewportWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1280)
 
 const goToPath = (path) => {
   if (route.path === path) return
+  if (isMobileNav.value) {
+    mobileNavOpen.value = false
+  }
   router.push(path)
 }
 
@@ -482,6 +581,39 @@ const getLocalDateString = () => {
   return `${year}-${month}-${day}`
 }
 
+const saveSidebarState = () => {
+  localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(sidebarCollapsed.value))
+}
+
+const toggleSidebar = () => {
+  sidebarCollapsed.value = !sidebarCollapsed.value
+  saveSidebarState()
+}
+
+const toggleMobileNav = () => {
+  mobileNavOpen.value = !mobileNavOpen.value
+}
+
+const closeMobileNav = () => {
+  mobileNavOpen.value = false
+}
+
+const syncLayoutMode = () => {
+  viewportWidth.value = window.innerWidth
+  if (isMobileNav.value) {
+    mobileNavOpen.value = false
+    sidebarCollapsed.value = false
+    return
+  }
+
+  try {
+    const stored = localStorage.getItem(SIDEBAR_COLLAPSED_KEY)
+    sidebarCollapsed.value = stored === 'true'
+  } catch (error) {
+    sidebarCollapsed.value = false
+  }
+}
+
 const formatPlanDate = (dateStr) => {
   if (!dateStr) return ''
   const date = new Date(`${dateStr}T00:00:00`)
@@ -489,6 +621,7 @@ const formatPlanDate = (dateStr) => {
 }
 
 const showPlanFloat = computed(() => !selectedSubject.value)
+const isMobileNav = computed(() => viewportWidth.value <= 960)
 const planFloatStyle = computed(() => ({
   left: `${planFloatPosition.value.left}px`,
   top: `${planFloatPosition.value.top}px`
@@ -630,13 +763,97 @@ const hasAttachmentAsset = computed(() => currentQuestion.value?.type === 'code'
 const isImageAttachment = computed(() => ['.png', '.jpg', '.jpeg', '.bmp', '.webp', '.gif'].includes(attachmentExt.value))
 const isPdfAttachment = computed(() => attachmentExt.value === '.pdf')
 const isPreviewableAttachment = computed(() => isImageAttachment.value || isPdfAttachment.value)
+const currentAnswerState = computed(() => answers.value[currentIndex.value] || null)
+const showSelfEvaluationActions = computed(() => Boolean(currentAnswerState.value?.isPending))
+const resultBoxClass = computed(() => {
+  if (currentAnswerState.value?.isPending) return 'pending'
+  return currentAnswerState.value?.isCorrect ? 'correct' : 'wrong'
+})
+const resultTitle = computed(() => {
+  if (currentAnswerState.value?.isPending) return '已显示参考答案，请自行判断正误'
+  return currentAnswerState.value?.isCorrect ? '回答正确' : '回答错误'
+})
 const hasAnswered = computed(() => answers.value[currentIndex.value] !== undefined)
-const completedCount = computed(() => Object.keys(answers.value).length)
+const completedCount = computed(() => Object.values(answers.value).filter((item) => !item.isPending).length)
 const accuracyRate = computed(() => {
   if (!completedCount.value) return 0
-  const correct = Object.values(answers.value).filter((item) => item.isCorrect).length
+  const correct = Object.values(answers.value).filter((item) => !item.isPending && item.isCorrect).length
   return Math.round((correct / completedCount.value) * 100)
 })
+
+const normalizePracticeQuestionCount = () => {
+  const total = allQuestions.value.length
+  if (!total) {
+    practiceQuestionCount.value = 1
+    return 0
+  }
+
+  const numericCount = Number(practiceQuestionCount.value)
+  const fallback = total
+  const normalized = Number.isFinite(numericCount) ? Math.floor(numericCount) : fallback
+  practiceQuestionCount.value = Math.min(Math.max(normalized || fallback, 1), total)
+  return practiceQuestionCount.value
+}
+
+const shuffleQuestions = (source) => {
+  const items = [...source]
+  for (let i = items.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[items[i], items[j]] = [items[j], items[i]]
+  }
+  return items
+}
+
+const resetPracticeState = () => {
+  currentIndex.value = 0
+  selectedAnswer.value = ''
+  answers.value = {}
+  showResult.value = false
+  showExplanation.value = false
+  deleteMode.value = false
+  deleting.value = false
+  batchDeleting.value = false
+  batchSelectedIds.value = []
+  loading.value = false
+  aiLoading.value = false
+  aiExplanation.value = ''
+  pendingSubmissions.value = []
+}
+
+const applyPracticeQuestions = (preferredQuestionId = Number(route.query.question_id) || null) => {
+  const count = normalizePracticeQuestionCount()
+  const sourceQuestions = allQuestions.value
+
+  if (!sourceQuestions.length || count === 0) {
+    questions.value = []
+    resetPracticeState()
+    return
+  }
+
+  let sessionQuestions = []
+  if (practiceMode.value === 'random') {
+    const preferredQuestion = preferredQuestionId
+      ? sourceQuestions.find((question) => question.id === preferredQuestionId)
+      : null
+    const remainingQuestions = preferredQuestion
+      ? sourceQuestions.filter((question) => question.id !== preferredQuestionId)
+      : sourceQuestions
+    sessionQuestions = shuffleQuestions(remainingQuestions).slice(0, Math.max(count - (preferredQuestion ? 1 : 0), 0))
+    if (preferredQuestion) {
+      sessionQuestions.unshift(preferredQuestion)
+    }
+  } else {
+    sessionQuestions = sourceQuestions.slice(0, count)
+  }
+
+  questions.value = sessionQuestions
+  resetPracticeState()
+
+  const questionIndex = preferredQuestionId
+    ? questions.value.findIndex((question) => question.id === preferredQuestionId)
+    : -1
+  selectQuestion(questionIndex >= 0 ? questionIndex : 0)
+}
 
 const truncateContent = (content) => (content.length > 28 ? `${content.slice(0, 28)}...` : content)
 const questionTypeLabel = (type) => ({
@@ -752,6 +969,7 @@ const handleDeleteSubject = async (subject) => {
 
 const backToSubjects = () => {
   selectedSubject.value = null
+  allQuestions.value = []
   questions.value = []
   router.replace({ path: '/' })
   loadSubjects()
@@ -761,13 +979,11 @@ const backToSubjects = () => {
 const loadQuestions = async () => {
   if (!selectedSubject.value) return
   try {
-    questions.value = await getQuestions(0, 1000, selectedSubject.value.id, selectedQuestionType.value)
-    currentIndex.value = 0
-    answers.value = {}
-    batchSelectedIds.value = []
-    const questionId = Number(route.query.question_id)
-    const questionIndex = questionId ? questions.value.findIndex((question) => question.id === questionId) : -1
-    selectQuestion(questionIndex >= 0 ? questionIndex : 0)
+    allQuestions.value = await getQuestions(0, 1000, selectedSubject.value.id, selectedQuestionType.value)
+    if (allQuestions.value.length && practiceQuestionCount.value > allQuestions.value.length) {
+      practiceQuestionCount.value = allQuestions.value.length
+    }
+    applyPracticeQuestions()
   } catch (error) {
     ElMessage.error(`加载题目失败：${error.response?.data?.detail || error.message}`)
   }
@@ -874,9 +1090,10 @@ const openAnswerEditor = async () => {
 
 const selectQuestion = (index) => {
   currentIndex.value = Math.max(0, Math.min(index, Math.max(questions.value.length - 1, 0)))
-  selectedAnswer.value = answers.value[currentIndex.value]?.userAnswer || ''
-  showResult.value = Boolean(answers.value[currentIndex.value])
-  showExplanation.value = Boolean(answers.value[currentIndex.value])
+  const savedAnswer = answers.value[currentIndex.value]
+  selectedAnswer.value = savedAnswer?.userAnswer || ''
+  showResult.value = Boolean(savedAnswer)
+  showExplanation.value = Boolean(savedAnswer)
   aiExplanation.value = ''
   scrollCurrentQuestionIntoView('smooth')
 }
@@ -917,12 +1134,93 @@ const scrollCurrentQuestionIntoView = (behavior = 'smooth') => {
 
 const submitCurrentAnswer = async () => {
   if (!selectedAnswer.value || !currentQuestion.value) return
+  
+  const isFillQuestion = currentQuestion.value.type === 'fill'
+  const existingSubmission = pendingSubmissions.value.find(s => s.question_id === currentQuestion.value.id)
+  
+  if (!existingSubmission) {
+    pendingSubmissions.value.push({
+      question_id: currentQuestion.value.id,
+      user_answer: selectedAnswer.value,
+      index: currentIndex.value
+    })
+  } else {
+    existingSubmission.user_answer = selectedAnswer.value
+  }
+
+  answers.value[currentIndex.value] = {
+    isCorrect: null,
+    isPending: true,
+    userAnswer: selectedAnswer.value
+  }
+  showResult.value = true
+  showExplanation.value = true
+
+  if (isFillQuestion) {
+    ElMessage.info('已显示参考答案，请自行判断是否答对')
+  } else {
+    ElMessage.success('答案已保存，将在批量提交时统一处理')
+    if (currentIndex.value < questions.value.length - 1) {
+      selectQuestion(currentIndex.value + 1)
+    }
+  }
+}
+
+const submitAllPending = async () => {
+  if (pendingSubmissions.value.length === 0) {
+    ElMessage.info('没有待提交的答案')
+    return
+  }
+  
+  batchSubmitting.value = true
+  loading.value = true
+  
+  try {
+    const result = await batchSubmitAnswers(pendingSubmissions.value)
+    
+    result.results.forEach(res => {
+      if (res.error) {
+        ElMessage.error(`第 ${res.question_id} 题提交失败: ${res.error}`)
+        return
+      }
+      
+      const submission = pendingSubmissions.value.find(s => s.question_id === res.question_id)
+      if (submission) {
+        answers.value[submission.index] = {
+          isCorrect: res.is_correct,
+          isPending: false,
+          userAnswer: submission.user_answer
+        }
+      }
+      
+      if (res.is_correct) {
+        if (res.removed_from_wrong) {
+          ElMessage.success(`回答正确，已从错题本移除`)
+        } else if (res.remaining_to_remove > 0) {
+          ElMessage.success(`回答正确，还需再答对 ${res.remaining_to_remove} 次才会移出错题本`)
+        }
+      }
+    })
+    
+    pendingSubmissions.value = []
+    ElMessage.success(`批量提交完成，共提交 ${result.results.length} 题`)
+  } catch (error) {
+    ElMessage.error(`批量提交失败：${error.response?.data?.detail || error.message}`)
+  } finally {
+    batchSubmitting.value = false
+    loading.value = false
+  }
+}
+
+const submitSelfEvaluation = async (isCorrect) => {
+  if (!currentQuestion.value || !currentAnswerState.value?.isPending) return
   loading.value = true
   try {
-    const result = await apiSubmitAnswer(currentQuestion.value.id, selectedAnswer.value)
+    const result = await apiSubmitAnswer(currentQuestion.value.id, currentAnswerState.value.userAnswer, isCorrect)
     answers.value[currentIndex.value] = {
       isCorrect: result.is_correct,
-      userAnswer: selectedAnswer.value
+      isPending: false,
+      userAnswer: currentAnswerState.value.userAnswer
     }
     showResult.value = true
     showExplanation.value = true
@@ -932,16 +1230,16 @@ const submitCurrentAnswer = async () => {
       } else if (result.remaining_to_remove > 0) {
         ElMessage.success(`回答正确，还需再答对 ${result.remaining_to_remove} 次才会移出错题本`)
       } else {
-        ElMessage.success('回答正确')
+        ElMessage.success('已标记为正确')
       }
       if (currentIndex.value < questions.value.length - 1) {
         selectQuestion(currentIndex.value + 1)
       }
     } else {
-      ElMessage.warning('回答错误，已加入错题本')
+      ElMessage.warning('已标记为错误，并加入错题本')
     }
   } catch (error) {
-    ElMessage.error(`提交失败：${error.response?.data?.detail || error.message}`)
+    ElMessage.error(`提交自评失败：${error.response?.data?.detail || error.message}`)
   } finally {
     loading.value = false
   }
@@ -1029,8 +1327,7 @@ const loadAiExplanation = async () => {
 }
 
 const resetPractice = () => {
-  answers.value = {}
-  selectQuestion(0)
+  applyPracticeQuestions()
 }
 
 watch(currentIndex, () => {
@@ -1040,7 +1337,9 @@ watch(currentIndex, () => {
 onMounted(async () => {
   window.addEventListener('keydown', handlePracticeEnterKey)
   window.addEventListener('resize', initPlanFloatPosition)
+  window.addEventListener('resize', syncLayoutMode)
   await loadSubjects()
+  syncLayoutMode()
   initPlanFloatPosition()
   loadTodayPlan()
   const subjectId = Number(route.query.subject_id)
@@ -1056,6 +1355,7 @@ onMounted(async () => {
 onUnmounted(() => {
   window.removeEventListener('keydown', handlePracticeEnterKey)
   window.removeEventListener('resize', initPlanFloatPosition)
+  window.removeEventListener('resize', syncLayoutMode)
   window.removeEventListener('pointermove', movePlanFloat)
   window.removeEventListener('pointerup', endPlanFloatDrag)
 })
@@ -1065,10 +1365,19 @@ onUnmounted(() => {
 .app-layout {
   display: flex;
   min-height: 100vh;
+  background: linear-gradient(180deg, #f0f9ff 0%, #fafafa 100%);
+}
+
+.mobile-nav-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: rgba(15, 23, 42, 0.36);
+  backdrop-filter: blur(4px);
 }
 
 .sidebar {
-  width: 240px;
+  width: clamp(216px, 18vw, 240px);
   background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
   color: white;
   display: flex;
@@ -1078,11 +1387,58 @@ onUnmounted(() => {
   left: 0;
   top: 0;
   z-index: 100;
+  transition: width 0.25s ease, transform 0.25s ease;
+}
+
+.app-layout.sidebar-collapsed .sidebar {
+  width: 84px;
+}
+
+.logo-group {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.logo-copy {
+  min-width: 0;
+}
+
+.logo-copy span {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: #94a3b8;
+}
+
+.sidebar-toggle {
+  color: #cbd5e1;
+}
+
+.desktop-toggle {
+  margin-left: auto;
+}
+
+.mobile-close {
+  display: none;
+}
+
+.nav-section-title {
+  padding: 0 16px 10px;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #64748b;
 }
 
 .logo-section {
   padding: 24px 20px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .logo-icon {
@@ -1127,6 +1483,7 @@ onUnmounted(() => {
 
 .nav-item .el-icon {
   font-size: 20px;
+  min-width: 20px;
 }
 
 .nav-item span {
@@ -1146,7 +1503,16 @@ onUnmounted(() => {
 }
 
 .avatar {
-  font-size: 32px;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 700;
+  color: #e2e8f0;
+  background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
 }
 
 .user-details {
@@ -1174,9 +1540,14 @@ onUnmounted(() => {
 
 .main-content {
   flex: 1;
-  margin-left: 240px;
+  margin-left: clamp(216px, 18vw, 240px);
+  min-width: 0;
   min-height: 100vh;
-  background: linear-gradient(180deg, #f0f9ff 0%, #fafafa 100%);
+  transition: margin-left 0.25s ease;
+}
+
+.app-layout.sidebar-collapsed .main-content {
+  margin-left: 84px;
 }
 
 .practice-page {
@@ -1189,9 +1560,45 @@ onUnmounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 18px 24px;
+  gap: 16px;
+  padding: clamp(16px, 2vw, 24px);
   background: #fff;
   border-bottom: 1px solid #e4e7ed;
+}
+
+.header-main {
+  min-width: 0;
+}
+
+.header-nav {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.header-nav-btn {
+  color: #334155;
+  background: #f8fafc;
+  box-shadow: 0 0 0 1px #e2e8f0 inset;
+}
+
+.subject-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 13px;
+}
+
+.subject-chip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .page-header h1 {
@@ -1217,7 +1624,7 @@ onUnmounted(() => {
   max-width: 1180px;
   width: 100%;
   margin: 0 auto;
-  padding: 20px 24px 24px;
+  padding: clamp(16px, 2vw, 24px);
 }
 
 .create-subject {
@@ -1235,7 +1642,7 @@ onUnmounted(() => {
 .subject-grid {
   max-width: none;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
   gap: 14px;
 }
 
@@ -1276,14 +1683,34 @@ onUnmounted(() => {
 .practice-layout {
   flex: 1;
   display: grid;
-  grid-template-columns: 340px minmax(0, 1fr);
-  gap: 20px;
-  padding: 20px 24px 24px;
+  grid-template-columns: minmax(280px, 26vw) minmax(0, 1fr);
+  gap: clamp(14px, 1.8vw, 24px);
+  padding: clamp(16px, 2vw, 24px);
 }
 
 .type-filter {
-  padding: 16px 20px 0;
+  padding: 16px clamp(16px, 2vw, 24px) 0;
   background: #f5f7fa;
+}
+
+.practice-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.practice-mode-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.count-input {
+  width: 140px;
 }
 
 .plan-float {
@@ -1460,6 +1887,7 @@ onUnmounted(() => {
   overflow-x: hidden;
   scroll-behavior: smooth;
   align-self: start;
+  min-width: 0;
   max-height: calc(100vh - 170px);
   display: flex;
   flex-direction: column;
@@ -1476,6 +1904,7 @@ onUnmounted(() => {
 
 .batch-bar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   padding: 10px 12px;
@@ -1545,6 +1974,10 @@ onUnmounted(() => {
   color: #67c23a;
 }
 
+.status.pending {
+  color: #409eff;
+}
+
 .status.wrong {
   color: #f56c6c;
 }
@@ -1554,18 +1987,20 @@ onUnmounted(() => {
 }
 
 .question-card {
-  max-width: 860px;
+  width: min(100%, 860px);
   margin: 0 auto;
   background: #fff;
   border: 1px solid #e4e7ed;
   border-radius: 12px;
-  padding: 24px;
+  padding: clamp(18px, 2vw, 24px);
 }
 
 .question-meta {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
   color: #909399;
   margin-bottom: 18px;
 }
@@ -1579,6 +2014,7 @@ onUnmounted(() => {
 .type-editor {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
 }
 
@@ -1697,6 +2133,11 @@ onUnmounted(() => {
   color: #529b2e;
 }
 
+.result-box.pending {
+  background: #ecf5ff;
+  color: #1d4ed8;
+}
+
 .result-box.wrong {
   background: #fef0f0;
   color: #c45656;
@@ -1724,31 +2165,82 @@ onUnmounted(() => {
 
 .stats-bar {
   display: flex;
+  flex-wrap: wrap;
   justify-content: center;
-  gap: 48px;
+  gap: 10px 32px;
   padding: 14px 24px;
   background: #fff;
   border-top: 1px solid #e4e7ed;
   color: #606266;
 }
 
-@media (max-width: 860px) {
+@media (max-width: 1180px) {
+  .question-list {
+    max-height: calc(100vh - 156px);
+  }
+
+  .question-summary {
+    font-size: 13px;
+  }
+}
+
+@media (max-width: 960px) {
   .sidebar {
-    position: static;
-    width: 100%;
-    height: auto;
+    position: fixed;
+    width: min(82vw, 320px);
+    max-width: 320px;
+    height: 100vh;
+    transform: translateX(-100%);
+    box-shadow: 0 24px 64px rgba(15, 23, 42, 0.22);
+  }
+
+  .app-layout.mobile-nav-open .sidebar {
+    transform: translateX(0);
+  }
+
+  .app-layout.sidebar-collapsed .sidebar {
+    width: min(82vw, 320px);
   }
 
   .main-content {
     margin-left: 0;
   }
 
+  .mobile-close {
+    display: inline-flex;
+    margin-left: auto;
+  }
+
+  .nav-menu {
+    display: block;
+    padding: 12px 16px 14px;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  .nav-item {
+    margin-bottom: 4px;
+  }
+
+  .user-section {
+    padding: 12px 16px 16px;
+  }
+
   .practice-layout {
     grid-template-columns: 1fr;
   }
 
+  .practice-toolbar {
+    align-items: stretch;
+  }
+
+  .practice-mode-controls {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
   .question-list {
-    max-height: 260px;
+    max-height: 280px;
   }
 
   .create-subject {
@@ -1764,6 +2256,94 @@ onUnmounted(() => {
 
   .attachment-header {
     flex-direction: column;
+  }
+}
+
+@media (max-width: 720px) {
+  .page-header h1 {
+    font-size: 20px;
+  }
+
+  .header-actions,
+  .actions,
+  .practice-mode-controls {
+    width: 100%;
+  }
+
+  .practice-mode-controls > * {
+    flex: 1 1 auto;
+  }
+
+  .count-input {
+    width: 100%;
+  }
+
+  .question-card {
+    width: 100%;
+  }
+
+  .meta-right {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
+
+@media (max-width: 560px) {
+  .logo-section {
+    padding: 16px 14px 10px;
+  }
+
+  .logo-icon {
+    font-size: 32px;
+    margin-bottom: 8px;
+  }
+
+  .nav-menu {
+    padding: 10px 14px 12px;
+  }
+
+  .nav-item {
+    padding: 10px 12px;
+    gap: 8px;
+  }
+
+  .nav-item span {
+    font-size: 13px;
+  }
+
+  .question-list {
+    max-height: 250px;
+  }
+
+  .question-item,
+  .question-item.deleting {
+    gap: 8px;
+    padding: 10px 12px;
+  }
+
+  .question-item {
+    grid-template-columns: 30px minmax(0, 1fr) 18px 18px;
+  }
+
+  .question-item.deleting {
+    grid-template-columns: 30px 22px minmax(0, 1fr) 18px 18px;
+  }
+
+  .question-number {
+    width: 24px;
+    height: 24px;
+    font-size: 12px;
+  }
+
+  .question-content {
+    padding: 14px;
+    font-size: 16px;
+    line-height: 1.7;
+  }
+
+  .stats-bar {
+    justify-content: flex-start;
+    padding: 12px 16px;
   }
 }
 </style>
