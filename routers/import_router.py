@@ -11,6 +11,7 @@ from auth import get_current_user
 from database import get_db
 from models import Question, Subject, User
 from routers.subjects import get_or_create_default_subject
+from utils.answer_normalizer import normalize_question_type, normalize_standard_answer
 from utils.file_extract import extract_text_from_file, save_uploaded_file, extract_zip_file
 from utils.parser import parse_exercise_text
 
@@ -88,10 +89,6 @@ def normalize_content(content: str) -> str:
     return "".join(content.lower().split())
 
 
-def normalize_question_type(question_type: str) -> str:
-    return question_type if question_type in {"single", "multi", "judge", "fill", "short", "code"} else "single"
-
-
 def resolve_subject_id(subject_id: Optional[int], db: Session, current_user: User) -> int:
     if subject_id is None:
         return get_or_create_default_subject(db, current_user.id).id
@@ -120,7 +117,7 @@ def create_question(
         type=normalize_question_type(request.type),
         content=request.content,
         options=request.options,
-        answer=request.answer,
+        answer=normalize_standard_answer(request.type, request.answer),
         explanation=request.explanation or "",
     )
     db.add(new_question)
@@ -286,6 +283,7 @@ def import_questions(
     }
 
     for q in parsed_questions:
+        normalized_type = normalize_question_type(q.get("type", "single"))
         normalized_content = normalize_content(q["content"])
         if normalized_content in known_contents:
             continue
@@ -293,10 +291,10 @@ def import_questions(
             Question(
                 user_id=current_user.id,
                 subject_id=subject_id,
-                type=normalize_question_type(q.get("type", "single")),
+                type=normalized_type,
                 content=q["content"],
                 options=q["options"],
-                answer=q["answer"],
+                answer=normalize_standard_answer(normalized_type, q["answer"]),
                 explanation=q.get("explanation", ""),
             )
         )

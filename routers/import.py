@@ -5,6 +5,7 @@ from typing import Dict, Any
 
 from database import get_db
 from models import Question
+from utils.answer_normalizer import normalize_standard_answer
 from utils.parser import parse_exercise_text
 
 # 创建路由实例
@@ -72,7 +73,7 @@ async def import_questions(request: ImportRequest, db: Session = Depends(get_db)
                 type="single",
                 content=q['content'],
                 options=q['options'],
-                answer=q['answer'],
+                answer=normalize_standard_answer("single", q['answer']),
                 explanation=q.get('explanation', '')
             )
             db.add(new_question)

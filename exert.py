@@ -1,253 +1,250 @@
-import subprocess
 import os
-import sys
-import time
 import platform
+import shutil
 import signal
 import socket
+import subprocess
+import sys
+import threading
+import time
+
+
+IS_WINDOWS = platform.system() == "Windows"
+BACKEND_PORT = 8000
+FRONTEND_PORT_START = 5173
+FRONTEND_PORT_END = 5200
+
 
 def is_port_in_use(port):
-    """检查端口是否被占用"""
+    """Return True when the given localhost TCP port is occupied."""
     try:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.settimeout(1)
-            return s.connect_ex(('localhost', port)) == 0
-    except Exception:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.settimeout(1)
+            return sock.connect_ex(("127.0.0.1", port)) == 0
+    except OSError:
         return False
 
-def find_available_port(start_port=5173, max_port=5200):
-    """查找可用端口"""
-    for port in range(start_port, max_port + 1):
+
+def find_available_port(start_port=FRONTEND_PORT_START, end_port=FRONTEND_PORT_END):
+    """Find the first available port in the given range."""
+    for port in range(start_port, end_port + 1):
         if not is_port_in_use(port):
             return port
     return None
 
-def run_command(cmd, cwd=None):
-    """运行命令并返回进程对象"""
-    print(f"Executing: {cmd}")
-    if platform.system() == 'Windows':
-        # 使用 shell=True 但不创建新窗口
-        return subprocess.Popen(
-            cmd, 
-            cwd=cwd, 
-            shell=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True
-        )
-    else:
-        return subprocess.Popen(
-            cmd, 
-            cwd=cwd, 
-            shell=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True
-        )
 
 def read_process_output(proc, name):
-    """读取进程输出（后台线程）"""
-    def read_output():
-        while proc.poll() is None:
-            try:
-                line = proc.stdout.readline()
-                if line:
-                    print(f"[{name}] {line.strip()}")
-            except Exception:
-                pass
-    threading.Thread(target=read_output, daemon=True).start()
+    """Stream child process output in a background thread."""
 
-def start_backend(backend_dir):
-    """启动后端服务"""
+    def _reader():
+        if proc.stdout is None:
+            return
+        for line in iter(proc.stdout.readline, ""):
+            text = line.rstrip()
+            if text:
+                print(f"[{name}] {text}")
+        proc.stdout.close()
+
+    threading.Thread(target=_reader, daemon=True).start()
+
+
+def run_command(cmd, cwd=None, name="Process"):
+    """Start a child process with streamed output."""
+    print(f"[INFO] Starting {name}: {cmd}")
+
+    creationflags = 0
+    if IS_WINDOWS:
+        creationflags = subprocess.CREATE_NEW_PROCESS_GROUP
+
+    proc = subprocess.Popen(
+        cmd,
+        cwd=cwd,
+        shell=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        creationflags=creationflags,
+    )
+    read_process_output(proc, name)
+    return proc
+
+
+def start_backend(project_dir):
+    """Start the FastAPI backend."""
     print("\n[INFO] Starting backend service...")
-    
-    # 检查端口
-    if is_port_in_use(8000):
-        print("[ERROR] Port 8000 is already in use!")
+
+    if is_port_in_use(BACKEND_PORT):
+        print(f"[ERROR] Port {BACKEND_PORT} is already in use.")
         return None
-    
-    # 检查虚拟环境
-    activate_script = os.path.join(backend_dir, '.venv', 'Scripts', 'activate')
-    if not os.path.exists(activate_script):
-        print(f"[ERROR] Virtual environment not found at {activate_script}")
+
+    venv_python = os.path.join(project_dir, ".venv", "Scripts", "python.exe")
+    if not os.path.exists(venv_python):
+        print(f"[ERROR] Virtual environment Python not found: {venv_python}")
         return None
-    
-    cmd = f'"{activate_script}" && python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload'
-    proc = run_command(cmd, cwd=backend_dir)
-    
-    # 等待启动
+
+    cmd = f'"{venv_python}" -m uvicorn main:app --host 127.0.0.1 --port {BACKEND_PORT} --reload'
+    proc = run_command(cmd, cwd=project_dir, name="Backend")
+
     timeout = 10
     start_time = time.time()
     while time.time() - start_time < timeout:
-        if is_port_in_use(8000):
-            print("[INFO] Backend service started successfully!")
+        if is_port_in_use(BACKEND_PORT):
+            print("[INFO] Backend service started successfully.")
             return proc
-        time.sleep(0.5)
         if proc.poll() is not None:
-            # 进程已退出，检查错误
-            output = proc.stdout.read() if proc.stdout else ""
-            print(f"[ERROR] Backend failed to start: {output}")
+            print(f"[ERROR] Backend exited early with code {proc.returncode}.")
             return None
-    
-    print("[ERROR] Backend service startup timed out!")
-    proc.kill()
+        time.sleep(0.5)
+
+    print("[ERROR] Backend service startup timed out.")
+    stop_process(proc, "Backend")
     return None
 
+
 def start_frontend(frontend_dir):
-    """启动前端服务"""
+    """Start the Vite frontend."""
     print("\n[INFO] Starting frontend service...")
-    
-    # 查找可用端口
-    frontend_port = find_available_port(5173)
+
+    frontend_port = find_available_port()
     if frontend_port is None:
-        print("[ERROR] No available port found for frontend!")
+        print("[ERROR] No available port found for frontend.")
         return None, None
-    
-    # 检查 npm 是否可用
-    npm_path = os.path.join(frontend_dir, 'node_modules', '.bin', 'npm.cmd')
-    if os.path.exists(npm_path):
-        cmd = f'"{npm_path}" run dev -- --host 127.0.0.1 --port {frontend_port}'
-    else:
-        cmd = f'npm run dev -- --host 127.0.0.1 --port {frontend_port}'
-    
-    proc = run_command(cmd, cwd=frontend_dir)
-    
-    # 等待启动
+
+    npm_cmd = shutil.which("npm")
+    if npm_cmd is None:
+        npm_cmd = os.path.join(frontend_dir, "node_modules", ".bin", "npm.cmd")
+        if not os.path.exists(npm_cmd):
+            print("[ERROR] npm was not found. Install Node.js and frontend dependencies first.")
+            return None, None
+
+    cmd = f'"{npm_cmd}" run dev -- --host 127.0.0.1 --port {frontend_port} --strictPort'
+    proc = run_command(cmd, cwd=frontend_dir, name="Frontend")
+
     timeout = 15
     start_time = time.time()
     while time.time() - start_time < timeout:
         if is_port_in_use(frontend_port):
-            print(f"[INFO] Frontend service started successfully on port {frontend_port}!")
+            print(f"[INFO] Frontend service started successfully on port {frontend_port}.")
             return proc, frontend_port
-        time.sleep(0.5)
         if proc.poll() is not None:
-            output = proc.stdout.read() if proc.stdout else ""
-            print(f"[ERROR] Frontend failed to start: {output}")
+            print(f"[ERROR] Frontend exited early with code {proc.returncode}.")
             return None, None
-    
-    print("[ERROR] Frontend service startup timed out!")
-    proc.kill()
+        time.sleep(0.5)
+
+    print("[ERROR] Frontend service startup timed out.")
+    stop_process(proc, "Frontend")
     return None, None
 
-def check_dependencies():
-    """检查必要依赖"""
+
+def check_dependencies(project_dir):
+    """Check required project files and tools."""
     print("[INFO] Checking dependencies...")
-    
-    backend_dir = os.path.dirname(os.path.abspath(__file__))
-    
-    # 检查Python虚拟环境
-    venv_dir = os.path.join(backend_dir, '.venv')
-    if not os.path.exists(venv_dir):
-        print("[ERROR] Virtual environment not found at:", venv_dir)
-        print("Please run: python -m venv .venv")
+
+    venv_python = os.path.join(project_dir, ".venv", "Scripts", "python.exe")
+    if not os.path.exists(venv_python):
+        print(f"[ERROR] Virtual environment not found: {venv_python}")
+        print("Run: python -m venv .venv")
         return False
-    
-    # 检查前端依赖
-    frontend_dir = os.path.join(backend_dir, 'frontend')
-    node_modules_dir = os.path.join(frontend_dir, 'node_modules')
+
+    frontend_dir = os.path.join(project_dir, "frontend")
+    node_modules_dir = os.path.join(frontend_dir, "node_modules")
     if not os.path.exists(node_modules_dir):
-        print("[ERROR] Frontend dependencies not installed at:", node_modules_dir)
-        print("Please run 'npm install' in frontend directory.")
+        print(f"[ERROR] Frontend dependencies not installed: {node_modules_dir}")
+        print("Run: cd frontend && npm install")
         return False
-    
-    # 检查 main.py
-    main_file = os.path.join(backend_dir, 'main.py')
+
+    main_file = os.path.join(project_dir, "main.py")
     if not os.path.exists(main_file):
-        print("[ERROR] main.py not found at:", main_file)
+        print(f"[ERROR] main.py not found: {main_file}")
         return False
-    
-    # 检查 package.json
-    package_json = os.path.join(frontend_dir, 'package.json')
+
+    package_json = os.path.join(frontend_dir, "package.json")
     if not os.path.exists(package_json):
-        print("[ERROR] package.json not found at:", package_json)
+        print(f"[ERROR] package.json not found: {package_json}")
         return False
-    
-    print("[INFO] All dependencies checked successfully!")
+
+    print("[INFO] All dependencies checked successfully.")
     return True
 
+
 def stop_process(proc, name):
-    """优雅停止进程"""
+    """Stop a child process as gracefully as possible."""
     if proc is None or proc.poll() is not None:
         return
-    
+
     print(f"\n[INFO] Stopping {name} service...")
-    
     try:
-        if platform.system() == 'Windows':
-            # Windows 上使用 taskkill
+        if IS_WINDOWS:
             proc.send_signal(signal.CTRL_BREAK_EVENT)
         else:
             proc.terminate()
-        
-        # 等待进程结束
+
         try:
             proc.wait(timeout=5)
-            print(f"[INFO] {name} service stopped gracefully")
+            print(f"[INFO] {name} service stopped gracefully.")
         except subprocess.TimeoutExpired:
             print(f"[WARNING] {name} service did not stop in time, forcing kill...")
             proc.kill()
-            proc.wait()
-            print(f"[INFO] {name} service killed")
-            
-    except Exception as e:
-        print(f"[ERROR] Failed to stop {name} service: {e}")
+            proc.wait(timeout=5)
+            print(f"[INFO] {name} service killed.")
+    except Exception as exc:
+        print(f"[ERROR] Failed to stop {name} service cleanly: {exc}")
         try:
             proc.kill()
-        except:
+            proc.wait(timeout=5)
+            print(f"[INFO] {name} service killed.")
+        except Exception:
             pass
 
+
 def main():
-    print("="*60)
+    print("=" * 60)
     print("    Exercise Management System - One-Click Launch")
-    print("="*60)
-    
-    backend_dir = os.path.dirname(os.path.abspath(__file__))
-    
-    # 检查依赖
-    if not check_dependencies():
-        input("\nPress Enter to exit...")
+    print("=" * 60)
+
+    project_dir = os.path.dirname(os.path.abspath(__file__))
+    if not check_dependencies(project_dir):
         sys.exit(1)
-    
+
     backend_proc = None
     frontend_proc = None
-    frontend_port = None
-    
+
     try:
-        # 启动后端
-        backend_proc = start_backend(backend_dir)
+        backend_proc = start_backend(project_dir)
         if backend_proc is None:
-            print("[ERROR] Failed to start backend service")
+            print("[ERROR] Failed to start backend service.")
             return
-        
-        # 启动前端
-        frontend_proc, frontend_port = start_frontend(os.path.join(backend_dir, 'frontend'))
+
+        frontend_proc, frontend_port = start_frontend(os.path.join(project_dir, "frontend"))
         if frontend_proc is None:
-            print("[ERROR] Failed to start frontend service")
+            print("[ERROR] Failed to start frontend service.")
             return
-        
-        print("\n" + "="*60)
-        print("✅ All services started successfully!")
-        print(f"🌐 Backend: http://localhost:8000")
-        print(f"🌐 Frontend: http://localhost:{frontend_port}")
-        print("="*60)
+
+        print("\n" + "=" * 60)
+        print("[OK] All services started successfully.")
+        print(f"[URL] Backend:  http://127.0.0.1:{BACKEND_PORT}")
+        print(f"[URL] Frontend: http://127.0.0.1:{frontend_port}")
+        print("=" * 60)
         print("\nPress Ctrl+C to stop all services...")
-        
-        # 保持主进程运行
+
         while True:
+            if backend_proc.poll() is not None:
+                print(f"\n[ERROR] Backend exited unexpectedly with code {backend_proc.returncode}.")
+                break
+            if frontend_proc.poll() is not None:
+                print(f"\n[ERROR] Frontend exited unexpectedly with code {frontend_proc.returncode}.")
+                break
             time.sleep(1)
-            
+
     except KeyboardInterrupt:
         print("\n\n[INFO] User interrupted, stopping services...")
-        
     finally:
-        # 停止所有进程
-        if frontend_proc:
-            stop_process(frontend_proc, "Frontend")
-        if backend_proc:
-            stop_process(backend_proc, "Backend")
-        
+        stop_process(frontend_proc, "Frontend")
+        stop_process(backend_proc, "Backend")
         print("\n[INFO] All services stopped. Goodbye!")
 
-if __name__ == '__main__':
-    import threading
+
+if __name__ == "__main__":
     main()

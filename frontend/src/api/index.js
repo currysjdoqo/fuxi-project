@@ -168,6 +168,13 @@ export const permanentlyDeleteQuestion = async (questionId) => {
   return response.data
 }
 
+export const permanentlyDeleteTrashQuestions = async (questionIds) => {
+  const response = await api.post('/trash/permanent-delete', {
+    question_ids: questionIds
+  })
+  return response.data
+}
+
 export const submitAnswer = async (questionId, userAnswer, selfEvaluation = null) => {
   const response = await api.post('/practice/submit', {
     question_id: questionId,
@@ -240,8 +247,10 @@ export const saveWrongThreshold = async (threshold) => {
   return response.data
 }
 
-export const clearAllData = async () => {
-  const response = await api.delete('/data')
+export const clearAllData = async (password) => {
+  const response = await api.delete('/data', {
+    data: { password }
+  })
   return response.data
 }
 

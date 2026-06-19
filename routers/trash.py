@@ -34,13 +34,23 @@ def get_trash(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    query = db.query(Question).filter(Question.deleted_at.is_not(None), Question.user_id == current_user.id)
+    query = db.query(Question).filter(
+        Question.deleted_at.is_not(None),
+        Question.user_id == current_user.id,
+    )
     if subject_id is not None:
         query = query.filter(Question.subject_id == subject_id)
+
     questions = query.order_by(Question.deleted_at.desc(), Question.id.desc()).all()
     result = []
     for question in questions:
-        subject = db.query(Subject).filter(Subject.id == question.subject_id, Subject.user_id == current_user.id).first() if question.subject_id else None
+        subject = (
+            db.query(Subject)
+            .filter(Subject.id == question.subject_id, Subject.user_id == current_user.id)
+            .first()
+            if question.subject_id
+            else None
+        )
         result.append(
             {
                 "id": question.id,
@@ -65,13 +75,19 @@ def restore_questions(
 ):
     questions = (
         db.query(Question)
-        .filter(Question.id.in_(request.question_ids), Question.deleted_at.is_not(None), Question.user_id == current_user.id)
+        .filter(
+            Question.id.in_(request.question_ids),
+            Question.deleted_at.is_not(None),
+            Question.user_id == current_user.id,
+        )
         .all()
     )
     if not questions:
-        raise HTTPException(status_code=404, detail="垃圾箱中没有这些题目")
+        raise HTTPException(status_code=404, detail="垃圾桶中没有这些题目")
+
     for question in questions:
         question.deleted_at = None
+
     db.commit()
     return {"message": "题目已恢复", "count": len(questions)}
 
@@ -84,13 +100,60 @@ def permanently_delete_question(
 ):
     question = (
         db.query(Question)
-        .filter(Question.id == question_id, Question.deleted_at.is_not(None), Question.user_id == current_user.id)
+        .filter(
+            Question.id == question_id,
+            Question.deleted_at.is_not(None),
+            Question.user_id == current_user.id,
+        )
         .first()
     )
     if not question:
-        raise HTTPException(status_code=404, detail="题目不在垃圾箱中")
-    db.query(PracticeRecord).filter(PracticeRecord.question_id == question_id, PracticeRecord.user_id == current_user.id).delete()
-    db.query(WrongQuestion).filter(WrongQuestion.question_id == question_id, WrongQuestion.user_id == current_user.id).delete()
+        raise HTTPException(status_code=404, detail="题目不在垃圾桶中")
+
+    db.query(PracticeRecord).filter(
+        PracticeRecord.question_id == question_id,
+        PracticeRecord.user_id == current_user.id,
+    ).delete()
+    db.query(WrongQuestion).filter(
+        WrongQuestion.question_id == question_id,
+        WrongQuestion.user_id == current_user.id,
+    ).delete()
     db.delete(question)
     db.commit()
     return {"message": "题目已永久删除"}
+
+
+@router.post("/trash/permanent-delete")
+def permanently_delete_questions(
+    request: RestoreRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    questions = (
+        db.query(Question)
+        .filter(
+            Question.id.in_(request.question_ids),
+            Question.deleted_at.is_not(None),
+            Question.user_id == current_user.id,
+        )
+        .all()
+    )
+    if not questions:
+        raise HTTPException(status_code=404, detail="题目不在垃圾桶中")
+
+    question_ids = [question.id for question in questions]
+
+    db.query(PracticeRecord).filter(
+        PracticeRecord.question_id.in_(question_ids),
+        PracticeRecord.user_id == current_user.id,
+    ).delete(synchronize_session=False)
+    db.query(WrongQuestion).filter(
+        WrongQuestion.question_id.in_(question_ids),
+        WrongQuestion.user_id == current_user.id,
+    ).delete(synchronize_session=False)
+
+    for question in questions:
+        db.delete(question)
+
+    db.commit()
+    return {"message": "题目已永久删除", "count": len(questions)}

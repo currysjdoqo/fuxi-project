@@ -3,12 +3,13 @@
     <nav class="sidebar">
       <div class="logo-section">
         <svg class="logo-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-          <path d="M2 17L12 22L22 17" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-          <path d="M2 12L12 17L22 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+          <path d="M2 17L12 22L22 17" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+          <path d="M2 12L12 17L22 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
         </svg>
         <h2>习题管理系统</h2>
       </div>
+
       <div class="nav-menu">
         <div class="nav-item" :class="{ active: $route.path === '/' }" @click="$router.push('/')">
           <el-icon><Document /></el-icon>
@@ -43,9 +44,10 @@
           <span>设置</span>
         </div>
       </div>
+
       <div class="user-section">
         <div class="user-info">
-          <div class="avatar">👤</div>
+          <div class="avatar">U</div>
           <div class="user-details">
             <span class="username">{{ username }}</span>
             <span class="logout-btn" @click="handleLogout">退出登录</span>
@@ -67,7 +69,7 @@
           <section class="settings-card">
             <h2>DeepSeek API Key</h2>
             <p class="muted">
-              后端会保存到项目根目录的 .env 文件。当前状态：{{ settings?.has_deepseek_api_key ? '已配置' : '未配置' }}
+              后端会保存到项目根目录的 `.env` 文件。当前状态：{{ settings?.has_deepseek_api_key ? '已配置' : '未配置' }}
             </p>
             <div class="key-row">
               <el-input
@@ -92,7 +94,7 @@
 
           <section class="settings-card danger">
             <h2>清空所有数据</h2>
-            <p class="muted">会删除题目、练习记录和错题本，操作不可撤销。</p>
+            <p class="muted">会删除题目、练习记录和错题本，操作不可撤销。执行前必须输入当前登录密码。</p>
             <el-button type="danger" :icon="Delete" :loading="clearing" @click="clearData">清空所有数据</el-button>
           </section>
         </main>
@@ -102,10 +104,10 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { h, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { Check, Delete, Document, Plus, Refresh, Star, Setting, CircleClose } from '@element-plus/icons-vue'
+import { ElInput, ElMessage, ElMessageBox } from 'element-plus'
+import { Check, CircleClose, Delete, Document, List, Plus, Refresh, Setting, Star } from '@element-plus/icons-vue'
 import { clearAllData, getSettings, saveDeepSeekKey, saveWrongThreshold } from '../api'
 
 const router = useRouter()
@@ -165,11 +167,49 @@ const saveKey = async () => {
   }
 }
 
+const promptPasswordConfirm = async () => {
+  let password = ''
+
+  await ElMessageBox({
+    title: '密码确认',
+    message: h('div', { class: 'danger-confirm' }, [
+      h('p', { class: 'danger-confirm__text' }, '请输入当前登录密码后再清空所有数据。'),
+      h(ElInput, {
+        modelValue: password,
+        'onUpdate:modelValue': (value) => {
+          password = value
+        },
+        type: 'password',
+        showPassword: true,
+        placeholder: '请输入当前密码',
+        autocomplete: 'current-password'
+      })
+    ]),
+    showCancelButton: true,
+    confirmButtonText: '确认清空',
+    cancelButtonText: '取消',
+    confirmButtonClass: 'el-button--danger',
+    beforeClose: (action, instance, done) => {
+      if (action !== 'confirm') {
+        done()
+        return
+      }
+      if (!password.trim()) {
+        ElMessage.warning('请输入当前密码')
+        return
+      }
+      done()
+    }
+  })
+
+  return password.trim()
+}
+
 const clearData = async () => {
   try {
-    await ElMessageBox.confirm('确定要清空所有数据吗？此操作不可撤销！', '警告', { type: 'warning' })
+    const password = await promptPasswordConfirm()
     clearing.value = true
-    await clearAllData()
+    await clearAllData(password)
     ElMessage.success('数据已清空')
     await loadSettings()
   } catch (error) {
@@ -270,7 +310,15 @@ onMounted(loadSettings)
 }
 
 .avatar {
-  font-size: 32px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 700;
 }
 
 .user-details {
@@ -359,7 +407,8 @@ onMounted(loadSettings)
   line-height: 1.6;
 }
 
-.key-row, .threshold-row {
+.key-row,
+.threshold-row {
   display: flex;
   gap: 12px;
 }

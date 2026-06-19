@@ -7,8 +7,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from auth import get_current_user, verify_password
 from database import get_db
-from auth import get_current_user
 from models import PracticeRecord, Question, Subject, User, WrongQuestion
 
 router = APIRouter()
@@ -34,6 +34,10 @@ class AiExplainRequest(BaseModel):
 class AiExplainResponse(BaseModel):
     explanation: str
     source: str
+
+
+class ClearDataRequest(BaseModel):
+    password: str
 
 
 def _load_env_values() -> dict[str, str]:
@@ -63,11 +67,15 @@ def _get_deepseek_api_key() -> str:
 
 
 def get_wrong_question_threshold() -> int:
-    raw_value = os.getenv(WRONG_THRESHOLD_KEY) or _load_env_values().get(WRONG_THRESHOLD_KEY, str(DEFAULT_WRONG_THRESHOLD))
+    raw_value = os.getenv(WRONG_THRESHOLD_KEY) or _load_env_values().get(
+        WRONG_THRESHOLD_KEY,
+        str(DEFAULT_WRONG_THRESHOLD),
+    )
     try:
         threshold = int(raw_value)
     except (TypeError, ValueError):
         return DEFAULT_WRONG_THRESHOLD
+
     if threshold < 1:
         return 1
     if threshold > 10:
@@ -84,27 +92,45 @@ def get_settings(current_user: User = Depends(get_current_user)):
 
 
 @router.post("/settings/deepseek-key")
-def save_deepseek_key(request_body: ApiKeyRequest, current_user: User = Depends(get_current_user)):
+def save_deepseek_key(
+    request_body: ApiKeyRequest,
+    current_user: User = Depends(get_current_user),
+):
     api_key = request_body.api_key.strip()
     if not api_key:
         raise HTTPException(status_code=400, detail="API Key 不能为空")
+
     _write_env_value("DEEPSEEK_API_KEY", api_key)
     os.environ["DEEPSEEK_API_KEY"] = api_key
     return {"message": "DeepSeek API Key 已保存"}
 
 
 @router.post("/settings/wrong-threshold")
-def save_wrong_threshold(request_body: WrongThresholdRequest, current_user: User = Depends(get_current_user)):
+def save_wrong_threshold(
+    request_body: WrongThresholdRequest,
+    current_user: User = Depends(get_current_user),
+):
     threshold = request_body.threshold
     if threshold < 1 or threshold > 10:
         raise HTTPException(status_code=400, detail="阈值必须在 1 到 10 之间")
+
     _write_env_value(WRONG_THRESHOLD_KEY, str(threshold))
     os.environ[WRONG_THRESHOLD_KEY] = str(threshold)
     return {"message": "错题移除阈值已保存", "threshold": threshold}
 
 
 @router.delete("/data")
-def clear_all_data(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def clear_all_data(
+    request_body: ClearDataRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    password = request_body.password.strip()
+    if not password:
+        raise HTTPException(status_code=400, detail="请输入当前密码")
+    if not verify_password(password, current_user.password_hash):
+        raise HTTPException(status_code=403, detail="密码错误，无法清空数据")
+
     db.query(PracticeRecord).filter(PracticeRecord.user_id == current_user.id).delete()
     db.query(WrongQuestion).filter(WrongQuestion.user_id == current_user.id).delete()
     db.query(Question).filter(Question.user_id == current_user.id).delete()
@@ -119,13 +145,17 @@ def explain_question(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    question = db.query(Question).filter(Question.id == request_body.question_id, Question.user_id == current_user.id).first()
+    question = (
+        db.query(Question)
+        .filter(Question.id == request_body.question_id, Question.user_id == current_user.id)
+        .first()
+    )
     if not question:
         raise HTTPException(status_code=404, detail="题目不存在")
 
     api_key = _get_deepseek_api_key()
     if not api_key:
-        fallback = question.explanation or "暂无解析。请先在设置页配置 DeepSeek API Key 后再使用 AI 讲解。"
+        fallback = question.explanation or "暂无解析。请先在设置页面配置 DeepSeek API Key 后再使用 AI 讲解。"
         return {"explanation": fallback, "source": "local"}
 
     option_text = "\n".join(f"{key}. {value}" for key, value in sorted(question.options.items()))
@@ -170,4 +200,5 @@ def explain_question(
     content = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
     if not content:
         raise HTTPException(status_code=502, detail="DeepSeek 未返回有效讲解")
+
     return {"explanation": content, "source": "deepseek"}

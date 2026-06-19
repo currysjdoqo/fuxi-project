@@ -1,5 +1,4 @@
 from datetime import datetime
-import re
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -11,6 +10,7 @@ from auth import get_current_user
 from database import get_db
 from models import PracticeRecord, Question, Subject, User, WrongQuestion
 from routers.settings import get_wrong_question_threshold
+from utils.answer_normalizer import is_answer_correct
 
 router = APIRouter()
 
@@ -41,23 +41,6 @@ class SubmitResponse(BaseModel):
     explanation: Optional[str]
     removed_from_wrong: bool = False
     remaining_to_remove: int = 0
-
-
-def normalize_answer(answer: str) -> str:
-    return "".join(answer.strip().upper().split())
-
-
-def normalize_multi_answer(answer: str) -> str:
-    letters = re.findall(r"[A-Z]", answer.upper())
-    if not letters:
-        return normalize_answer(answer)
-    return "".join(sorted(set(letters)))
-
-
-def is_answer_correct(question_type: str, user_answer: str, correct_answer: str) -> bool:
-    if question_type == "multi":
-        return normalize_multi_answer(user_answer) == normalize_multi_answer(correct_answer)
-    return normalize_answer(user_answer) == normalize_answer(correct_answer)
 
 
 @router.post("/review/generate", response_model=List[ReviewQuestionOut])

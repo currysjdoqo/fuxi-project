@@ -3,12 +3,13 @@
     <nav class="sidebar">
       <div class="logo-section">
         <svg class="logo-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-          <path d="M2 17L12 22L22 17" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-          <path d="M2 12L12 17L22 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+          <path d="M2 17L12 22L22 17" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+          <path d="M2 12L12 17L22 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
         </svg>
         <h2>习题管理系统</h2>
       </div>
+
       <div class="nav-menu">
         <div class="nav-item" :class="{ active: $route.path === '/' }" @click="$router.push('/')">
           <el-icon><Document /></el-icon>
@@ -43,9 +44,10 @@
           <span>设置</span>
         </div>
       </div>
+
       <div class="user-section">
         <div class="user-info">
-          <div class="avatar">👤</div>
+          <div class="avatar">U</div>
           <div class="user-details">
             <span class="username">{{ username }}</span>
             <span class="logout-btn" @click="handleLogout">退出登录</span>
@@ -75,6 +77,9 @@
           <el-button size="small" @click="selectedIds = []">清空</el-button>
           <el-button size="small" type="success" :disabled="!selectedIds.length" :loading="restoring" @click="restoreSelected">
             恢复选中
+          </el-button>
+          <el-button size="small" type="danger" :disabled="!selectedIds.length" :loading="deleting" @click="permanentDeleteSelected">
+            彻底删除选中
           </el-button>
         </section>
 
@@ -117,8 +122,14 @@
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Refresh, Document, Plus, Star, Setting, CircleClose, Delete } from '@element-plus/icons-vue'
-import { getSubjects, getTrashQuestions, permanentlyDeleteQuestion, restoreTrashQuestions } from '../api'
+import { CircleClose, Delete, Document, List, Plus, Refresh, Setting, Star } from '@element-plus/icons-vue'
+import {
+  getSubjects,
+  getTrashQuestions,
+  permanentlyDeleteQuestion,
+  permanentlyDeleteTrashQuestions,
+  restoreTrashQuestions
+} from '../api'
 
 const router = useRouter()
 const username = ref(localStorage.getItem('auth_username') || '用户')
@@ -128,6 +139,7 @@ const trashList = ref([])
 const selectedIds = ref([])
 const loading = ref(false)
 const restoring = ref(false)
+const deleting = ref(false)
 
 const handleLogout = () => {
   localStorage.removeItem('auth_token')
@@ -180,9 +192,9 @@ const loadTrash = async () => {
 const toggleSelection = (questionId) => {
   if (selectedIds.value.includes(questionId)) {
     selectedIds.value = selectedIds.value.filter((id) => id !== questionId)
-  } else {
-    selectedIds.value = [...selectedIds.value, questionId]
+    return
   }
+  selectedIds.value = [...selectedIds.value, questionId]
 }
 
 const selectAll = () => {
@@ -207,6 +219,36 @@ const restoreSelected = async () => {
 const restoreOne = async (questionId) => {
   selectedIds.value = [questionId]
   await restoreSelected()
+}
+
+const permanentDeleteSelected = async () => {
+  if (!selectedIds.value.length) return
+
+  try {
+    await ElMessageBox.confirm(
+      `确认彻底删除选中的 ${selectedIds.value.length} 道题？该操作不可恢复。`,
+      '彻底删除',
+      {
+        type: 'warning',
+        confirmButtonText: '彻底删除',
+        cancelButtonText: '取消'
+      }
+    )
+  } catch {
+    return
+  }
+
+  deleting.value = true
+  try {
+    await permanentlyDeleteTrashQuestions(selectedIds.value)
+    ElMessage.success('选中题目已彻底删除')
+    selectedIds.value = []
+    await loadTrash()
+  } catch (error) {
+    ElMessage.error(`批量彻底删除失败：${error.response?.data?.detail || error.message}`)
+  } finally {
+    deleting.value = false
+  }
 }
 
 const permanentDelete = async (questionId) => {
@@ -319,7 +361,15 @@ onMounted(async () => {
 }
 
 .avatar {
-  font-size: 32px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 700;
 }
 
 .user-details {
