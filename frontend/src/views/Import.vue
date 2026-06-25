@@ -1,5 +1,6 @@
 <template>
-  <div class="app-layout">
+  <div class="app-layout" :class="{ 'sidebar-collapsed': sidebarCollapsed, 'mobile-nav-open': mobileNavOpen }">
+    <div v-if="mobileNavOpen" class="mobile-nav-mask" @click="closeMobileNav"></div>
     <nav class="sidebar">
       <div class="logo-section">
         <svg class="logo-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -55,8 +56,26 @@
     </nav>
 
     <div class="main-content">
+      <button
+        v-if="!isMobileNav"
+        type="button"
+        class="desktop-sidebar-handle"
+        :class="{ collapsed: sidebarCollapsed }"
+        :aria-label="sidebarCollapsed ? '展开导航栏' : '隐藏导航栏'"
+        @click="toggleSidebar"
+      >
+        {{ sidebarCollapsed ? '>' : '<' }}
+      </button>
       <div class="import-page">
         <header class="page-header">
+          <el-button
+            v-if="isMobileNav"
+            circle
+            text
+            class="header-nav-btn"
+            :icon="Menu"
+            @click="toggleMobileNav"
+          />
           <div>
             <h1>导入练习集</h1>
             <p>先选择科目，再粘贴题库文本或上传附件导入。</p>
@@ -182,10 +201,12 @@
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Back, Delete, Document, Plus, Refresh, Setting, Star, Upload, UploadFilled, CircleClose } from '@element-plus/icons-vue'
+import { Back, Delete, Document, Plus, Refresh, Setting, Star, Upload, UploadFilled, CircleClose, Menu } from '@element-plus/icons-vue'
+import { useSidebarLayout } from '../composables/useSidebarLayout'
 import { createSubject, extractTextFromFile, extractMultipleFiles, getSubjects, importParsedQuestions, parseQuestions } from '../api'
 
 const router = useRouter()
+const { sidebarCollapsed, mobileNavOpen, isMobileNav, toggleSidebar, toggleMobileNav, closeMobileNav } = useSidebarLayout()
 const username = ref(localStorage.getItem('auth_username') || '用户')
 const subjects = ref([])
 const subjectId = ref(null)

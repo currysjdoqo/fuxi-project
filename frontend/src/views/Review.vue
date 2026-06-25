@@ -1,5 +1,6 @@
 <template>
-  <div class="app-layout">
+  <div class="app-layout" :class="{ 'sidebar-collapsed': sidebarCollapsed, 'mobile-nav-open': mobileNavOpen }">
+    <div v-if="mobileNavOpen" class="mobile-nav-mask" @click="closeMobileNav"></div>
     <nav class="sidebar">
       <div class="logo-section">
         <svg class="logo-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -55,8 +56,26 @@
     </nav>
 
     <div class="main-content">
+      <button
+        v-if="!isMobileNav"
+        type="button"
+        class="desktop-sidebar-handle"
+        :class="{ collapsed: sidebarCollapsed }"
+        :aria-label="sidebarCollapsed ? '展开导航栏' : '隐藏导航栏'"
+        @click="toggleSidebar"
+      >
+        {{ sidebarCollapsed ? '>' : '<' }}
+      </button>
       <div class="review-page">
         <header class="page-header">
+          <el-button
+            v-if="isMobileNav"
+            circle
+            text
+            class="header-nav-btn"
+            :icon="Menu"
+            @click="toggleMobileNav"
+          />
           <div>
             <h1>复习模式</h1>
             <p>答对会自动移出错题本，答错会继续保留。</p>
@@ -67,8 +86,20 @@
         <main class="review-content">
           <section v-if="!reviewStarted" class="start-card">
             <div class="count-row">
+              <span>复习科目</span>
+              <el-select v-model="subjectId" placeholder="请选择科目" class="subject-select">
+                <el-option
+                  v-for="subject in subjects"
+                  :key="subject.id"
+                  :label="`${subject.name}（${subject.wrong_count || 0} 道错题）`"
+                  :value="subject.id"
+                  :disabled="!subject.wrong_count"
+                />
+              </el-select>
+            </div>
+            <div class="count-row">
               <span>抽取数量</span>
-              <el-input-number v-model="reviewCount" :min="1" :max="50" />
+              <el-input-number v-model="reviewCount" :min="1" :max="maxReviewCount" />
             </div>
             <el-button type="primary" size="large" :icon="Collection" :loading="isGenerating" @click="startReview">
               开始复习
@@ -173,13 +204,15 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ArrowRight, Back, Check, Collection, Refresh, Document, Plus, Star, Setting, CircleClose, Delete } from '@element-plus/icons-vue'
-import { generateReviewQuestions, submitReviewAnswer } from '../api'
+import { ArrowRight, Back, Check, Collection, Refresh, Document, Plus, Star, Setting, CircleClose, Delete, Menu } from '@element-plus/icons-vue'
+import { useSidebarLayout } from '../composables/useSidebarLayout'
+import { generateReviewQuestions, getSubjects, submitReviewAnswer } from '../api'
 
 const router = useRouter()
+const { sidebarCollapsed, mobileNavOpen, isMobileNav, toggleSidebar, toggleMobileNav, closeMobileNav } = useSidebarLayout()
 const route = useRoute()
 const username = ref(localStorage.getItem('auth_username') || '用户')
 const reviewStarted = ref(false)
@@ -188,6 +221,7 @@ const isGenerating = ref(false)
 const submitting = ref(false)
 const reviewCount = ref(10)
 const subjectId = ref(null)
+const subjects = ref([])
 const reviewQuestions = ref([])
 const currentIndex = ref(0)
 const answers = ref({})
@@ -204,6 +238,11 @@ const handleLogout = () => {
 
 const currentQuestion = computed(() => reviewQuestions.value[currentIndex.value])
 const currentQuestionId = computed(() => currentQuestion.value?.id ?? currentQuestion.value?.question_id ?? null)
+const selectedSubject = computed(() => subjects.value.find((item) => item.id === subjectId.value) || null)
+const maxReviewCount = computed(() => {
+  const wrongCount = selectedSubject.value?.wrong_count || 0
+  return Math.max(1, Math.min(50, wrongCount || 1))
+})
 const correctCount = computed(() => Object.values(answers.value).filter(a => a.is_correct).length)
 const accuracyPercent = computed(() => reviewQuestions.value.length ? Math.round((correctCount.value / reviewQuestions.value.length) * 100) : 0)
 const progressPercent = computed(() => Math.round(((currentIndex.value) / reviewQuestions.value.length) * 100))
@@ -238,6 +277,32 @@ const answerOptions = computed(() => {
 
 const currentMultiAnswerSet = computed(() => new Set(currentQuestion.value?.answer ? currentQuestion.value.answer.split('').filter(Boolean) : []))
 
+const loadSubjects = async () => {
+  try {
+    subjects.value = await getSubjects()
+    if (subjectId.value && !selectedSubject.value) {
+      subjectId.value = null
+    }
+    if (!subjectId.value && subjects.value.length === 1) {
+      subjectId.value = subjects.value[0].id
+    }
+    if (reviewCount.value > maxReviewCount.value) {
+      reviewCount.value = maxReviewCount.value
+    }
+  } catch (error) {
+    ElMessage.error(`鍔犺浇绉戠洰澶辫触锛?{error.response?.data?.detail || error.message}`)
+  }
+}
+
+const syncReviewCountWithSubject = () => {
+  if (reviewCount.value > maxReviewCount.value) {
+    reviewCount.value = maxReviewCount.value
+  }
+  if (reviewCount.value < 1) {
+    reviewCount.value = 1
+  }
+}
+
 const displayAnswer = (question) => {
   if (question.type === 'judge') return question.answer === 'T' ? '正确' : question.answer === 'F' ? '错误' : question.answer
   if (question.type === 'multi') return question.answer.split('').join('、')
@@ -245,15 +310,22 @@ const displayAnswer = (question) => {
 }
 
 const startReview = async () => {
+  if (!subjectId.value) {
+    ElMessage.warning('璇峰厛閫夋嫨涓€涓鐩啀寮€濮嬪涔?')
+    return
+  }
   isGenerating.value = true
   try {
     const count = Number(reviewCount.value) || 10
-    const subjectId = route.query.subject_id ? Number(route.query.subject_id) : null
-    const generatedQuestions = await generateReviewQuestions(count, subjectId)
+    const generatedQuestions = await generateReviewQuestions(count, subjectId.value)
     reviewQuestions.value = generatedQuestions.map(question => ({
       ...question,
       id: question.id ?? question.question_id
     }))
+    if (!reviewQuestions.value.length) {
+      ElMessage.warning('褰撳墠绉戠洰鏆傛棤鍙涔犵殑閿欓')
+      return
+    }
     reviewStarted.value = true
     currentIndex.value = 0
     answers.value = {}
@@ -321,12 +393,17 @@ const restartReview = () => {
   showResult.value = false
   selectedAnswer.value = ''
   subjectId.value = route.query.subject_id ? Number(route.query.subject_id) : null
-  reviewCount.value = route.query.count ? Number(route.query.count) : 10
+  reviewCount.value = route.query.count ? Number(route.query.count) : Math.min(10, maxReviewCount.value)
 }
 
-onMounted(() => {
+watch(subjectId, () => {
+  syncReviewCountWithSubject()
+})
+
+onMounted(async () => {
   if (route.query.subject_id) subjectId.value = Number(route.query.subject_id)
   if (route.query.count) reviewCount.value = Number(route.query.count)
+  await loadSubjects()
 })
 </script>
 

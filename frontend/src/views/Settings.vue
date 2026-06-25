@@ -1,5 +1,6 @@
 <template>
-  <div class="app-layout">
+  <div class="app-layout" :class="{ 'sidebar-collapsed': sidebarCollapsed, 'mobile-nav-open': mobileNavOpen }">
+    <div v-if="mobileNavOpen" class="mobile-nav-mask" @click="closeMobileNav"></div>
     <nav class="sidebar">
       <div class="logo-section">
         <svg class="logo-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -57,8 +58,26 @@
     </nav>
 
     <div class="main-content">
+      <button
+        v-if="!isMobileNav"
+        type="button"
+        class="desktop-sidebar-handle"
+        :class="{ collapsed: sidebarCollapsed }"
+        :aria-label="sidebarCollapsed ? '展开导航栏' : '隐藏导航栏'"
+        @click="toggleSidebar"
+      >
+        {{ sidebarCollapsed ? '>' : '<' }}
+      </button>
       <div class="settings-page">
         <header class="page-header">
+          <el-button
+            v-if="isMobileNav"
+            circle
+            text
+            class="header-nav-btn"
+            :icon="Menu"
+            @click="toggleMobileNav"
+          />
           <div>
             <h1>设置</h1>
             <p>配置 AI 讲解和数据管理。</p>
@@ -107,10 +126,12 @@
 import { h, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElInput, ElMessage, ElMessageBox } from 'element-plus'
-import { Check, CircleClose, Delete, Document, List, Plus, Refresh, Setting, Star } from '@element-plus/icons-vue'
+import { Check, CircleClose, Delete, Document, List, Menu, Plus, Refresh, Setting, Star } from '@element-plus/icons-vue'
+import { useSidebarLayout } from '../composables/useSidebarLayout'
 import { clearAllData, getSettings, saveDeepSeekKey, saveWrongThreshold } from '../api'
 
 const router = useRouter()
+const { sidebarCollapsed, mobileNavOpen, isMobileNav, toggleSidebar, toggleMobileNav, closeMobileNav } = useSidebarLayout()
 const username = ref(localStorage.getItem('auth_username') || '用户')
 const settings = ref(null)
 const apiKey = ref('')
@@ -168,16 +189,16 @@ const saveKey = async () => {
 }
 
 const promptPasswordConfirm = async () => {
-  let password = ''
+  const password = ref('')
 
   await ElMessageBox({
     title: '密码确认',
     message: h('div', { class: 'danger-confirm' }, [
       h('p', { class: 'danger-confirm__text' }, '请输入当前登录密码后再清空所有数据。'),
       h(ElInput, {
-        modelValue: password,
+        modelValue: password.value,
         'onUpdate:modelValue': (value) => {
-          password = value
+          password.value = value
         },
         type: 'password',
         showPassword: true,
@@ -194,7 +215,7 @@ const promptPasswordConfirm = async () => {
         done()
         return
       }
-      if (!password.trim()) {
+      if (!password.value.trim()) {
         ElMessage.warning('请输入当前密码')
         return
       }
@@ -202,7 +223,7 @@ const promptPasswordConfirm = async () => {
     }
   })
 
-  return password.trim()
+  return password.value.trim()
 }
 
 const clearData = async () => {

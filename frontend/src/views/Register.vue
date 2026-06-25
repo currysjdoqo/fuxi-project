@@ -142,7 +142,7 @@ const handleRegister = async () => {
     localStorage.setItem('auth_username', result.username)
     sessionStorage.setItem('auth_session_ok', '1')
     ElMessage.success('注册成功')
-    router.replace('/')
+    router.replace('/import')
   } catch (error) {
     ElMessage.error(error?.response?.data?.detail || '注册失败，请重试')
   } finally {

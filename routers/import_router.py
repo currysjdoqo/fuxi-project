@@ -12,7 +12,7 @@ from database import get_db
 from models import Question, Subject, User
 from routers.subjects import get_or_create_default_subject
 from utils.answer_normalizer import normalize_question_type, normalize_standard_answer
-from utils.file_extract import extract_text_from_file, save_uploaded_file, extract_zip_file
+from utils.file_extract import extract_text_from_file, extract_zip_file, save_uploaded_file
 from utils.parser import parse_exercise_text
 
 router = APIRouter()
@@ -55,7 +55,7 @@ class FileExtractResponse(BaseModel):
 
 class SingleFileItem(BaseModel):
     filename: str
-    file_type: str  # text, asset
+    file_type: str
     text_content: str = ""
     parsed_questions: List[ParsedQuestion] = Field(default_factory=list)
     asset_url: str = ""
@@ -89,6 +89,18 @@ def normalize_content(content: str) -> str:
     return "".join(content.lower().split())
 
 
+def get_user_upload_dir(user_id: int) -> Path:
+    return UPLOAD_DIR / str(user_id)
+
+
+def build_private_asset_url(saved_name: str) -> str:
+    return f"/api/uploads/access/{saved_name}"
+
+
+def build_private_asset_download_url(saved_name: str, filename: str) -> str:
+    return f"/api/uploads/download/{saved_name}?name={quote(filename)}"
+
+
 def resolve_subject_id(subject_id: Optional[int], db: Session, current_user: User) -> int:
     if subject_id is None:
         return get_or_create_default_subject(db, current_user.id).id
@@ -96,6 +108,17 @@ def resolve_subject_id(subject_id: Optional[int], db: Session, current_user: Use
     if not subject:
         raise HTTPException(status_code=404, detail="科目不存在")
     return subject.id
+
+
+def resolve_user_upload_file(saved_name: str, current_user: User) -> Path:
+    safe_saved_name = Path(saved_name).name
+    base_dir = get_user_upload_dir(current_user.id).resolve()
+    file_path = (base_dir / safe_saved_name).resolve()
+    if not str(file_path).startswith(str(base_dir)):
+        raise HTTPException(status_code=400, detail="非法文件路径")
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="文件不存在")
+    return file_path
 
 
 @router.post("/questions", response_model=QuestionCreateResponse)
@@ -106,9 +129,17 @@ def create_question(
 ):
     subject_id = resolve_subject_id(request.subject_id, db, current_user)
     normalized_content = normalize_content(request.content)
-    all_questions = db.query(Question).filter(Question.user_id == current_user.id, Question.subject_id == subject_id, Question.deleted_at.is_(None)).all()
-    for q in all_questions:
-        if normalize_content(q.content) == normalized_content:
+    all_questions = (
+        db.query(Question)
+        .filter(
+            Question.user_id == current_user.id,
+            Question.subject_id == subject_id,
+            Question.deleted_at.is_(None),
+        )
+        .all()
+    )
+    for question in all_questions:
+        if normalize_content(question.content) == normalized_content:
             raise HTTPException(status_code=400, detail="题目已存在")
 
     new_question = Question(
@@ -132,54 +163,60 @@ def parse_questions(request: ParseRequest):
 
 
 @router.post("/import/extract-file", response_model=FileExtractResponse)
-async def extract_file(file: UploadFile = File(...)):
+async def extract_file(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+):
     if not file.filename:
         raise HTTPException(status_code=400, detail="文件名为空")
     file_bytes = await file.read()
     if not file_bytes:
         raise HTTPException(status_code=400, detail="上传文件为空")
-    saved_name, suffix = save_uploaded_file(file.filename, file_bytes, UPLOAD_DIR)
+
+    saved_name, suffix = save_uploaded_file(file.filename, file_bytes, get_user_upload_dir(current_user.id))
     if suffix not in TEXT_EXTRACT_EXTENSIONS:
         return {
             "filename": file.filename,
             "extracted_text": "",
             "parsed_count": 0,
-            "asset_url": f"/uploads/{saved_name}",
+            "asset_url": build_private_asset_url(saved_name),
             "asset_ext": suffix,
             "asset_saved_name": saved_name,
-            "asset_download_url": f"/api/uploads/download/{saved_name}?name={quote(file.filename)}",
+            "asset_download_url": build_private_asset_download_url(saved_name, file.filename),
         }
+
     text = extract_text_from_file(file.filename, file_bytes)
     parsed = parse_exercise_text(text)
     return {
         "filename": file.filename,
         "extracted_text": text,
         "parsed_count": len(parsed),
-        "asset_url": f"/uploads/{saved_name}",
+        "asset_url": build_private_asset_url(saved_name),
         "asset_ext": suffix,
         "asset_saved_name": saved_name,
-        "asset_download_url": f"/api/uploads/download/{saved_name}?name={quote(file.filename)}",
+        "asset_download_url": build_private_asset_download_url(saved_name, file.filename),
     }
 
 
+@router.get("/uploads/access/{saved_name}")
+def access_uploaded_file(
+    saved_name: str,
+    current_user: User = Depends(get_current_user),
+):
+    return FileResponse(path=resolve_user_upload_file(saved_name, current_user))
+
+
 @router.get("/uploads/download/{saved_name}")
-def download_uploaded_file(saved_name: str, name: str = Query("file")):
-    safe_saved_name = Path(saved_name).name
-    file_path = (UPLOAD_DIR / safe_saved_name).resolve()
-    base_dir = UPLOAD_DIR.resolve()
-    if not str(file_path).startswith(str(base_dir)):
-        raise HTTPException(status_code=400, detail="非法文件路径")
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail="文件不存在")
+def download_uploaded_file(
+    saved_name: str,
+    name: str = Query("file"),
+    current_user: User = Depends(get_current_user),
+):
+    file_path = resolve_user_upload_file(saved_name, current_user)
     return FileResponse(path=file_path, filename=Path(name).name, media_type="application/octet-stream")
 
 
-def _process_single_file(
-    filename: str,
-    file_bytes: bytes,
-    upload_dir: Path
-) -> SingleFileItem:
-    """处理单个文件"""
+def _process_single_file(filename: str, file_bytes: bytes, upload_dir: Path) -> SingleFileItem:
     suffix = Path(filename).suffix.lower()
     saved_name = ""
     asset_url = ""
@@ -194,9 +231,8 @@ def _process_single_file(
         file_type = "text"
     else:
         saved_name, _ = save_uploaded_file(filename, file_bytes, upload_dir)
-        asset_url = f"/uploads/{saved_name}"
-        asset_download_url = f"/api/uploads/download/{saved_name}?name={quote(filename)}"
-        file_type = "asset"
+        asset_url = build_private_asset_url(saved_name)
+        asset_download_url = build_private_asset_download_url(saved_name, filename)
 
     return SingleFileItem(
         filename=filename,
@@ -210,12 +246,16 @@ def _process_single_file(
 
 
 @router.post("/import/extract-multiple", response_model=MultiFileResponse)
-async def extract_multiple_files(files: List[UploadFile] = File(...)):
+async def extract_multiple_files(
+    files: List[UploadFile] = File(...),
+    current_user: User = Depends(get_current_user),
+):
     total_files = 0
     processed_files = 0
     all_text_contents = []
     all_parsed_questions: List[ParsedQuestion] = []
     all_assets: List[SingleFileItem] = []
+    user_upload_dir = get_user_upload_dir(current_user.id)
 
     for file in files:
         if not file.filename:
@@ -227,15 +267,10 @@ async def extract_multiple_files(files: List[UploadFile] = File(...)):
                 continue
 
             suffix = Path(file.filename).suffix.lower()
-
             if suffix == ".zip":
-                zip_items = extract_zip_file(file_bytes, UPLOAD_DIR)
+                zip_items = extract_zip_file(file_bytes, user_upload_dir)
                 for item in zip_items:
-                    processed_item = _process_single_file(
-                        item['filename'],
-                        item['file_bytes'],
-                        UPLOAD_DIR
-                    )
+                    processed_item = _process_single_file(item["filename"], item["file_bytes"], user_upload_dir)
                     if processed_item.text_content:
                         all_text_contents.append(f"---\n{processed_item.filename}\n---\n{processed_item.text_content}\n")
                         all_parsed_questions.extend(processed_item.parsed_questions)
@@ -243,7 +278,7 @@ async def extract_multiple_files(files: List[UploadFile] = File(...)):
                         all_assets.append(processed_item)
                     processed_files += 1
             else:
-                processed_item = _process_single_file(file.filename, file_bytes, UPLOAD_DIR)
+                processed_item = _process_single_file(file.filename, file_bytes, user_upload_dir)
                 if processed_item.text_content:
                     all_text_contents.append(f"---\n{processed_item.filename}\n---\n{processed_item.text_content}\n")
                     all_parsed_questions.extend(processed_item.parsed_questions)
@@ -282,9 +317,9 @@ def import_questions(
         ).all()
     }
 
-    for q in parsed_questions:
-        normalized_type = normalize_question_type(q.get("type", "single"))
-        normalized_content = normalize_content(q["content"])
+    for question in parsed_questions:
+        normalized_type = normalize_question_type(question.get("type", "single"))
+        normalized_content = normalize_content(question["content"])
         if normalized_content in known_contents:
             continue
         db.add(
@@ -292,10 +327,10 @@ def import_questions(
                 user_id=current_user.id,
                 subject_id=subject_id,
                 type=normalized_type,
-                content=q["content"],
-                options=q["options"],
-                answer=normalize_standard_answer(normalized_type, q["answer"]),
-                explanation=q.get("explanation", ""),
+                content=question["content"],
+                options=question["options"],
+                answer=normalize_standard_answer(normalized_type, question["answer"]),
+                explanation=question.get("explanation", ""),
             )
         )
         inserted_count += 1

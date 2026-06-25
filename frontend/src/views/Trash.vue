@@ -1,5 +1,6 @@
 <template>
-  <div class="app-layout">
+  <div class="app-layout" :class="{ 'sidebar-collapsed': sidebarCollapsed, 'mobile-nav-open': mobileNavOpen }">
+    <div v-if="mobileNavOpen" class="mobile-nav-mask" @click="closeMobileNav"></div>
     <nav class="sidebar">
       <div class="logo-section">
         <svg class="logo-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -57,8 +58,26 @@
     </nav>
 
     <div class="main-content">
+      <button
+        v-if="!isMobileNav"
+        type="button"
+        class="desktop-sidebar-handle"
+        :class="{ collapsed: sidebarCollapsed }"
+        :aria-label="sidebarCollapsed ? '展开导航栏' : '隐藏导航栏'"
+        @click="toggleSidebar"
+      >
+        {{ sidebarCollapsed ? '>' : '<' }}
+      </button>
       <div class="trash-page">
         <header class="page-header">
+          <el-button
+            v-if="isMobileNav"
+            circle
+            text
+            class="header-nav-btn"
+            :icon="Menu"
+            @click="toggleMobileNav"
+          />
           <div>
             <h1>垃圾桶</h1>
             <p>删除的题目会先保留在这里，可以恢复；永久删除后不可找回。</p>
@@ -122,7 +141,8 @@
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { CircleClose, Delete, Document, List, Plus, Refresh, Setting, Star } from '@element-plus/icons-vue'
+import { CircleClose, Delete, Document, List, Menu, Plus, Refresh, Setting, Star } from '@element-plus/icons-vue'
+import { useSidebarLayout } from '../composables/useSidebarLayout'
 import {
   getSubjects,
   getTrashQuestions,
@@ -132,6 +152,7 @@ import {
 } from '../api'
 
 const router = useRouter()
+const { sidebarCollapsed, mobileNavOpen, isMobileNav, toggleSidebar, toggleMobileNav, closeMobileNav } = useSidebarLayout()
 const username = ref(localStorage.getItem('auth_username') || '用户')
 const subjects = ref([])
 const subjectId = ref(null)

@@ -1,5 +1,6 @@
 <template>
-  <div class="app-layout">
+  <div class="app-layout" :class="{ 'sidebar-collapsed': sidebarCollapsed, 'mobile-nav-open': mobileNavOpen }">
+    <div v-if="mobileNavOpen" class="mobile-nav-mask" @click="closeMobileNav"></div>
     <nav class="sidebar">
       <div class="logo-section">
         <svg class="logo-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -55,8 +56,26 @@
     </nav>
 
     <div class="main-content">
+      <button
+        v-if="!isMobileNav"
+        type="button"
+        class="desktop-sidebar-handle"
+        :class="{ collapsed: sidebarCollapsed }"
+        :aria-label="sidebarCollapsed ? '展开导航栏' : '隐藏导航栏'"
+        @click="toggleSidebar"
+      >
+        {{ sidebarCollapsed ? '>' : '<' }}
+      </button>
       <div class="wrong-page">
         <header class="page-header">
+          <el-button
+            v-if="isMobileNav"
+            circle
+            text
+            class="header-nav-btn"
+            :icon="Menu"
+            @click="toggleMobileNav"
+          />
           <div>
             <h1>{{ selectedSubject ? `${selectedSubject.name}错题本` : '错题本' }}</h1>
             <p>错题按来源科目自动归类，最近一次错误答案来自练习记录。</p>
@@ -138,10 +157,12 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Delete, Edit, Refresh, Collection, Document, Plus, Star, Setting, CircleClose } from '@element-plus/icons-vue'
+import { Delete, Edit, Refresh, Collection, Document, Plus, Star, Setting, CircleClose, Menu } from '@element-plus/icons-vue'
+import { useSidebarLayout } from '../composables/useSidebarLayout'
 import { removeWrongQuestion, getSubjects, getWrongQuestions } from '../api'
 
 const router = useRouter()
+const { sidebarCollapsed, mobileNavOpen, isMobileNav, toggleSidebar, toggleMobileNav, closeMobileNav } = useSidebarLayout()
 const username = ref(localStorage.getItem('auth_username') || '用户')
 const loading = ref(false)
 const subjects = ref([])

@@ -1,5 +1,6 @@
 <template>
-  <div class="plan-page">
+  <div class="plan-page" :class="{ 'sidebar-collapsed': sidebarCollapsed, 'mobile-nav-open': mobileNavOpen }">
+    <div v-if="mobileNavOpen" class="mobile-nav-mask" @click="closeMobileNav"></div>
     <div class="sidebar">
       <div class="logo-section">
         <el-icon class="logo-icon"><Document /></el-icon>
@@ -18,7 +19,25 @@
     </div>
 
     <div class="main-content">
+      <button
+        v-if="!isMobileNav"
+        type="button"
+        class="desktop-sidebar-handle"
+        :class="{ collapsed: sidebarCollapsed }"
+        :aria-label="sidebarCollapsed ? '展开导航栏' : '隐藏导航栏'"
+        @click="toggleSidebar"
+      >
+        {{ sidebarCollapsed ? '>' : '<' }}
+      </button>
       <header class="page-header">
+        <el-button
+          v-if="isMobileNav"
+          circle
+          text
+          class="header-nav-btn"
+          :icon="Menu"
+          @click="toggleMobileNav"
+        />
         <div class="header-left">
           <h1>我的学习计划</h1>
           <p>管理你的每日学习任务</p>
@@ -126,8 +145,10 @@ import {
   Plus,
   Edit,
   Delete,
-  Check
+  Check,
+  Menu
 } from '@element-plus/icons-vue'
+import { useSidebarLayout } from '../composables/useSidebarLayout'
 import {
   createPlanItem,
   getPlanItemsByDate,
@@ -136,6 +157,7 @@ import {
 } from '../api'
 
 const router = useRouter()
+const { sidebarCollapsed, mobileNavOpen, isMobileNav, toggleSidebar, toggleMobileNav, closeMobileNav } = useSidebarLayout()
 
 const getLocalDateString = () => {
   const now = new Date()

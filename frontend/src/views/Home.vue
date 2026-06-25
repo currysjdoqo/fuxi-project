@@ -5,21 +5,13 @@
       <div class="logo-section">
         <div class="logo-group">
           <el-icon class="logo-icon"><Document /></el-icon>
-          <div v-if="!sidebarCollapsed || isMobileNav" class="logo-copy">
-            <h2>??????</h2>
+          <div class="logo-copy">
+            <h2>习题管理系统</h2>
             <span>Practice Workspace</span>
           </div>
         </div>
         <el-button
-          v-if="!isMobileNav"
-          circle
-          text
-          class="sidebar-toggle desktop-toggle"
-          :icon="sidebarCollapsed ? Expand : Fold"
-          @click="toggleSidebar"
-        />
-        <el-button
-          v-else
+          v-if="isMobileNav"
           circle
           text
           class="sidebar-toggle mobile-close"
@@ -29,7 +21,7 @@
       </div>
 
       <div class="nav-menu">
-        <div class="nav-section-title" v-if="!sidebarCollapsed || isMobileNav">功能导航</div>
+        <div class="nav-section-title">功能导航</div>
         <div
           v-for="item in navItems"
           :key="item.path"
@@ -38,14 +30,14 @@
           @click="goToPath(item.path)"
         >
           <el-icon><component :is="item.icon" /></el-icon>
-          <span v-if="!sidebarCollapsed || isMobileNav">{{ item.label }}</span>
+          <span>{{ item.label }}</span>
         </div>
       </div>
 
       <div class="user-section">
         <div class="user-info">
           <div class="avatar">👤</div>
-          <div v-if="!sidebarCollapsed || isMobileNav" class="user-details">
+          <div class="user-details">
             <span class="username">{{ username }}</span>
             <span class="logout-btn" @click="handleLogout">退出登录</span>
           </div>
@@ -54,16 +46,27 @@
     </nav>
 
     <div class="main-content">
+      <button
+        v-if="!isMobileNav"
+        type="button"
+        class="desktop-sidebar-handle"
+        :class="{ collapsed: sidebarCollapsed }"
+        :aria-label="sidebarCollapsed ? '展开导航栏' : '隐藏导航栏'"
+        @click="toggleSidebar"
+      >
+        {{ sidebarCollapsed ? '>' : '<' }}
+      </button>
       <div class="practice-page">
         <header class="page-header">
           <div class="header-main">
             <div class="header-nav">
               <el-button
+                v-if="isMobileNav"
                 circle
                 text
                 class="header-nav-btn"
-                :icon="isMobileNav ? Menu : (sidebarCollapsed ? Expand : Fold)"
-                @click="isMobileNav ? toggleMobileNav() : toggleSidebar()"
+                :icon="Menu"
+                @click="toggleMobileNav()"
               />
               <div v-if="selectedSubject" class="subject-chip">
                 <el-icon><Document /></el-icon>
@@ -283,6 +286,11 @@
 
                 <div class="question-content">{{ currentQuestion.content }}</div>
 
+                <div v-if="!deleteMode" class="question-actions">
+                  <el-button v-if="isOptionQuestion" size="small" :icon="Edit" @click="openEditOptionsDialog">修改排版</el-button>
+                  <el-button size="small" type="danger" :icon="Delete" @click="deleteCurrentQuestion">删除本题</el-button>
+                </div>
+
                 <div v-if="hasAttachmentAsset" class="attachment-panel">
                   <div class="attachment-header">
                     <div>
@@ -454,6 +462,46 @@
         </template>
       </div>
     </div>
+
+    <!-- 编辑选项对话框 -->
+    <el-dialog
+      v-model="editOptionsDialogVisible"
+      title="修改题目排版"
+      width="600px"
+      :close-on-click-modal="false"
+    >
+      <div class="edit-options-dialog">
+        <div class="options-editor">
+          <div v-for="(option, index) in editOptionsList" :key="index" class="option-editor-item">
+            <el-input
+              v-model="option.key"
+              placeholder="选项字母（A/B/C/D...）"
+              class="option-key-input"
+              maxlength="1"
+            />
+            <el-input
+              v-model="option.value"
+              placeholder="选项内容"
+              class="option-value-input"
+            />
+            <el-button
+              type="danger"
+              :icon="Delete"
+              circle
+              @click="removeOption(index)"
+              :disabled="editOptionsList.length <= 2"
+            />
+          </div>
+        </div>
+        <div class="options-actions">
+          <el-button type="primary" :icon="Plus" @click="addOption">添加选项</el-button>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="editOptionsDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="editOptionsLoading" @click="saveOptions">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -471,11 +519,10 @@ import {
   Delete,
   Document,
   DocumentCopy,
+  Edit,
   List,
   Plus,
   Refresh,
-  Fold,
-  Expand,
   Menu,
   Close,
   Select,
@@ -497,6 +544,7 @@ import {
   updatePlanItem,
   updateQuestionImportant,
   updateQuestionAnswer,
+  updateQuestionOptions,
   updateQuestionType
 } from '../api'
 
@@ -621,7 +669,7 @@ const formatPlanDate = (dateStr) => {
 }
 
 const showPlanFloat = computed(() => !selectedSubject.value)
-const isMobileNav = computed(() => viewportWidth.value <= 960)
+const isMobileNav = computed(() => viewportWidth.value <= 1180)
 const planFloatStyle = computed(() => ({
   left: `${planFloatPosition.value.left}px`,
   top: `${planFloatPosition.value.top}px`
@@ -1136,17 +1184,6 @@ const submitCurrentAnswer = async () => {
   if (!selectedAnswer.value || !currentQuestion.value) return
   
   const isFillQuestion = currentQuestion.value.type === 'fill'
-  const existingSubmission = pendingSubmissions.value.find(s => s.question_id === currentQuestion.value.id)
-  
-  if (!existingSubmission) {
-    pendingSubmissions.value.push({
-      question_id: currentQuestion.value.id,
-      user_answer: selectedAnswer.value,
-      index: currentIndex.value
-    })
-  } else {
-    existingSubmission.user_answer = selectedAnswer.value
-  }
 
   answers.value[currentIndex.value] = {
     isCorrect: null,
@@ -1157,8 +1194,20 @@ const submitCurrentAnswer = async () => {
   showExplanation.value = true
 
   if (isFillQuestion) {
+    // 填空题：用户自判，不加入批量提交队列
     ElMessage.info('已显示参考答案，请自行判断是否答对')
   } else {
+    // 选择题：加入批量提交队列
+    const existingSubmission = pendingSubmissions.value.find(s => s.question_id === currentQuestion.value.id)
+    if (!existingSubmission) {
+      pendingSubmissions.value.push({
+        question_id: currentQuestion.value.id,
+        user_answer: selectedAnswer.value,
+        index: currentIndex.value
+      })
+    } else {
+      existingSubmission.user_answer = selectedAnswer.value
+    }
     ElMessage.success('答案已保存，将在批量提交时统一处理')
     if (currentIndex.value < questions.value.length - 1) {
       selectQuestion(currentIndex.value + 1)
@@ -1176,7 +1225,19 @@ const submitAllPending = async () => {
   loading.value = true
   
   try {
-    const result = await batchSubmitAnswers(pendingSubmissions.value)
+    // 过滤掉已经被用户自判过的题目（isPending 为 false）
+    const submissionsToSubmit = pendingSubmissions.value.filter(submission => {
+      const answer = answers.value[submission.index]
+      return !answer || answer.isPending !== false
+    })
+    
+    if (submissionsToSubmit.length === 0) {
+      ElMessage.info('所有待提交的题目都已被自判，无需批量提交')
+      pendingSubmissions.value = []
+      return
+    }
+    
+    const result = await batchSubmitAnswers(submissionsToSubmit)
     
     result.results.forEach(res => {
       if (res.error) {
@@ -1184,7 +1245,7 @@ const submitAllPending = async () => {
         return
       }
       
-      const submission = pendingSubmissions.value.find(s => s.question_id === res.question_id)
+      const submission = submissionsToSubmit.find(s => s.question_id === res.question_id)
       if (submission) {
         answers.value[submission.index] = {
           isCorrect: res.is_correct,
@@ -1202,7 +1263,10 @@ const submitAllPending = async () => {
       }
     })
     
-    pendingSubmissions.value = []
+    // 清理已提交的题目
+    const submittedIds = new Set(result.results.map(r => r.question_id))
+    pendingSubmissions.value = pendingSubmissions.value.filter(s => !submittedIds.has(s.question_id))
+    
     ElMessage.success(`批量提交完成，共提交 ${result.results.length} 题`)
   } catch (error) {
     ElMessage.error(`批量提交失败：${error.response?.data?.detail || error.message}`)
@@ -1222,6 +1286,12 @@ const submitSelfEvaluation = async (isCorrect) => {
       isPending: false,
       userAnswer: currentAnswerState.value.userAnswer
     }
+    
+    // 从待提交队列中移除该题目
+    pendingSubmissions.value = pendingSubmissions.value.filter(
+      s => s.question_id !== currentQuestion.value.id
+    )
+    
     showResult.value = true
     showExplanation.value = true
     if (result.is_correct) {
@@ -1257,8 +1327,25 @@ const deleteCurrentQuestion = async () => {
     const removedIndex = currentIndex.value
     const removedId = currentQuestion.value.id
     await apiDeleteQuestion(currentQuestion.value.id)
+    
+    // 移除题目
     questions.value.splice(removedIndex, 1)
-    answers.value = {}
+    
+    // 从待提交队列中移除
+    pendingSubmissions.value = pendingSubmissions.value.filter(s => s.question_id !== removedId)
+    
+    // 调整答案记录索引
+    const newAnswers = {}
+    Object.keys(answers.value).forEach(key => {
+      const index = parseInt(key)
+      if (index < removedIndex) {
+        newAnswers[index] = answers.value[index]
+      } else if (index > removedIndex) {
+        newAnswers[index - 1] = answers.value[index]
+      }
+    })
+    answers.value = newAnswers
+    
     batchSelectedIds.value = batchSelectedIds.value.filter((id) => id !== removedId)
     selectQuestion(Math.min(removedIndex, questions.value.length - 1))
     ElMessage.success('题目已移入垃圾桶')
@@ -1352,6 +1439,116 @@ onMounted(async () => {
   }
 })
 
+// 编辑选项相关
+const editOptionsDialogVisible = ref(false)
+const editOptionsList = ref([])
+const editOptionsLoading = ref(false)
+
+const openEditOptionsDialog = () => {
+  if (!currentQuestion.value) return
+
+  // 初始化编辑选项列表
+  if (currentQuestion.value.type === 'judge') {
+    editOptionsList.value = [
+      { key: 'T', value: currentQuestion.value.options?.T || '正确' },
+      { key: 'F', value: currentQuestion.value.options?.F || '错误' }
+    ]
+  } else {
+    editOptionsList.value = Object.keys(currentQuestion.value.options || {})
+      .sort()
+      .map(key => ({
+        key,
+        value: currentQuestion.value.options[key]
+      }))
+  }
+
+  editOptionsDialogVisible.value = true
+}
+
+const addOption = () => {
+  // 自动生成下一个选项字母
+  const existingKeys = editOptionsList.value.map(o => o.key.toUpperCase())
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+  let nextKey = ''
+
+  for (const letter of alphabet) {
+    if (!existingKeys.includes(letter)) {
+      nextKey = letter
+      break
+    }
+  }
+
+  if (nextKey) {
+    editOptionsList.value.push({ key: nextKey, value: '' })
+  } else {
+    ElMessage.warning('已达到最大选项数量')
+  }
+}
+
+const removeOption = (index) => {
+  if (editOptionsList.value.length <= 2) {
+    ElMessage.warning('至少需要保留2个选项')
+    return
+  }
+  editOptionsList.value.splice(index, 1)
+}
+
+const saveOptions = async () => {
+  // 验证选项
+  const keys = editOptionsList.value.map(o => o.key.trim().toUpperCase())
+  const values = editOptionsList.value.map(o => o.value.trim())
+
+  // 检查是否有重复的键
+  if (new Set(keys).size !== keys.length) {
+    ElMessage.error('选项字母不能重复')
+    return
+  }
+
+  // 检查是否有空的键或值
+  if (keys.some(k => !k) || values.some(v => !v)) {
+    ElMessage.error('选项字母和内容都不能为空')
+    return
+  }
+
+  // 检查是否与当前答案冲突
+  const currentAnswer = currentQuestion.value.answer
+  if (currentQuestion.value.type === 'single') {
+    if (currentAnswer && !keys.includes(currentAnswer.toUpperCase())) {
+      ElMessage.error(`当前答案 "${currentAnswer}" 不在选项中，请先修改答案`)
+      return
+    }
+  } else if (currentQuestion.value.type === 'multi') {
+    const answerKeys = currentAnswer.split('').map(k => k.toUpperCase())
+    if (!answerKeys.every(k => keys.includes(k))) {
+      ElMessage.error(`当前答案 "${currentAnswer}" 包含不在选项中的字母，请先修改答案`)
+      return
+    }
+  }
+
+  editOptionsLoading.value = true
+
+  try {
+    // 构建选项对象
+    const options = {}
+    editOptionsList.value.forEach(o => {
+      options[o.key.trim().toUpperCase()] = o.value.trim()
+    })
+
+    // 调用 API 更新选项
+    await updateQuestionOptions(currentQuestion.value.id, options)
+
+    // 更新本地数据
+    currentQuestion.value.options = options
+
+    ElMessage.success('选项已更新')
+    editOptionsDialogVisible.value = false
+  } catch (error) {
+    ElMessage.error(`更新失败：${error.response?.data?.detail || error.message}`)
+  } finally {
+    editOptionsLoading.value = false
+  }
+}
+
 onUnmounted(() => {
   window.removeEventListener('keydown', handlePracticeEnterKey)
   window.removeEventListener('resize', initPlanFloatPosition)
@@ -1363,9 +1560,32 @@ onUnmounted(() => {
 
 <style scoped>
 .app-layout {
+  --sidebar-width: clamp(220px, 18vw, 256px);
+  --primary-color: #4f46e5;
+  --primary-light: #eef2ff;
+  --success-color: #10b981;
+  --warning-color: #f59e0b;
+  --danger-color: #ef4444;
+  --text-primary: #1e293b;
+  --text-secondary: #64748b;
+  --text-muted: #94a3b8;
+  --bg-primary: #ffffff;
+  --bg-secondary: #f8fafc;
+  --bg-gradient-start: #f0fdf4;
+  --bg-gradient-end: #fef3c7;
+  --border-color: #e2e8f0;
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
   display: flex;
   min-height: 100vh;
-  background: linear-gradient(180deg, #f0f9ff 0%, #fafafa 100%);
+  background: linear-gradient(135deg, #fdf2f8 0%, #f0f9ff 50%, #fef9c3 100%);
+  background-attachment: fixed;
 }
 
 .mobile-nav-mask {
@@ -1377,21 +1597,25 @@ onUnmounted(() => {
 }
 
 .sidebar {
-  width: clamp(216px, 18vw, 240px);
-  background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
-  color: white;
+  width: var(--sidebar-width);
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  color: var(--text-primary);
   display: flex;
   flex-direction: column;
-  position: fixed;
-  height: 100vh;
-  left: 0;
-  top: 0;
+  position: relative;
+  flex: 0 0 var(--sidebar-width);
+  min-height: 100vh;
   z-index: 100;
-  transition: width 0.25s ease, transform 0.25s ease;
+  overflow: hidden;
+  transition: width 0.25s ease, flex-basis 0.25s ease, transform 0.25s ease, opacity 0.2s ease;
+  box-shadow: var(--shadow-lg);
+  border-right: 1px solid var(--border-color);
 }
 
 .app-layout.sidebar-collapsed .sidebar {
-  width: 84px;
+  width: 0;
+  flex-basis: 0;
+  opacity: 0;
 }
 
 .logo-group {
@@ -1417,10 +1641,6 @@ onUnmounted(() => {
   color: #cbd5e1;
 }
 
-.desktop-toggle {
-  margin-left: auto;
-}
-
 .mobile-close {
   display: none;
 }
@@ -1434,23 +1654,28 @@ onUnmounted(() => {
 }
 
 .logo-section {
-  padding: 24px 20px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 28px 20px;
+  border-bottom: 1px solid var(--border-color);
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
+  background: linear-gradient(135deg, var(--primary-light) 0%, #ffffff 100%);
 }
 
 .logo-icon {
-  font-size: 40px;
-  color: #3b82f6;
-  margin-bottom: 12px;
+  font-size: 44px;
+  color: var(--primary-color);
+  filter: drop-shadow(0 4px 8px rgba(79, 70, 229, 0.2));
 }
 
 .logo-section h2 {
   margin: 0;
-  font-size: 18px;
-  font-weight: 600;
+  font-size: 20px;
+  font-weight: 700;
+  background: linear-gradient(135deg, var(--primary-color) 0%, #8b5cf6 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .nav-menu {
@@ -1462,92 +1687,171 @@ onUnmounted(() => {
 .nav-item {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
-  border-radius: 8px;
+  gap: 14px;
+  padding: 14px 16px;
+  border-radius: var(--radius-md);
   cursor: pointer;
-  transition: all 0.2s ease;
-  margin-bottom: 4px;
-  color: #94a3b8;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  margin-bottom: 6px;
+  color: var(--text-secondary);
+  position: relative;
+  overflow: hidden;
+}
+
+.nav-item::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--primary-color);
+  transform: scaleY(0);
+  transition: transform 0.3s ease;
 }
 
 .nav-item:hover {
-  background: rgba(59, 130, 246, 0.1);
-  color: #e2e8f0;
+  background: var(--primary-light);
+  color: var(--primary-color);
+  transform: translateX(4px);
+}
+
+.nav-item:hover::before {
+  transform: scaleY(1);
 }
 
 .nav-item.active {
-  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  background: linear-gradient(135deg, var(--primary-color) 0%, #7c3aed 100%);
   color: white;
+  box-shadow: var(--shadow-md);
+}
+
+.nav-item.active::before {
+  transform: scaleY(1);
+  background: rgba(255, 255, 255, 0.5);
 }
 
 .nav-item .el-icon {
-  font-size: 20px;
-  min-width: 20px;
+  font-size: 22px;
+  min-width: 24px;
+  transition: transform 0.3s ease;
+}
+
+.nav-item:hover .el-icon {
+  transform: scale(1.1);
 }
 
 .nav-item span {
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 500;
 }
 
 .user-section {
-  padding: 16px 20px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 20px;
+  border-top: 1px solid var(--border-color);
+  background: var(--bg-secondary);
 }
 
 .user-info {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  background: white;
+  box-shadow: var(--shadow-sm);
+  transition: all 0.3s ease;
+}
+
+.user-info:hover {
+  box-shadow: var(--shadow-md);
 }
 
 .avatar {
-  width: 38px;
-  height: 38px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 700;
-  color: #e2e8f0;
-  background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+  color: white;
+  background: linear-gradient(135deg, var(--primary-color) 0%, #f43f5e 100%);
+  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
+  transition: transform 0.3s ease;
+}
+
+.user-info:hover .avatar {
+  transform: scale(1.05);
 }
 
 .user-details {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
 }
 
 .username {
-  font-weight: 500;
-  font-size: 14px;
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--text-primary);
+}
+
+.user-role {
+  font-size: 12px;
+  color: var(--text-muted);
 }
 
 .logout-btn {
-  font-size: 12px;
-  color: #94a3b8;
+  font-size: 14px;
+  color: var(--text-secondary);
   cursor: pointer;
-  transition: color 0.2s ease;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  transition: all 0.2s ease;
 }
 
 .logout-btn:hover {
-  color: #ef4444;
+  color: var(--danger-color);
+  background: rgba(239, 68, 68, 0.1);
 }
 
 .main-content {
   flex: 1;
-  margin-left: clamp(216px, 18vw, 240px);
+  position: relative;
   min-width: 0;
   min-height: 100vh;
-  transition: margin-left 0.25s ease;
+  transition: width 0.25s ease;
 }
 
-.app-layout.sidebar-collapsed .main-content {
-  margin-left: 84px;
+.desktop-sidebar-handle {
+  position: fixed;
+  top: 24px;
+  left: calc(var(--sidebar-width) - 18px);
+  z-index: 110;
+  width: 36px;
+  height: 36px;
+  border: 1px solid #dbeafe;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.96);
+  color: #1d4ed8;
+  font-size: 18px;
+  line-height: 1;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
+  cursor: pointer;
+  transition: left 0.25s ease, background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.desktop-sidebar-handle:hover {
+  background: #1d4ed8;
+  color: #fff;
+  box-shadow: 0 14px 28px rgba(29, 78, 216, 0.2);
+}
+
+.desktop-sidebar-handle.collapsed {
+  left: 12px;
 }
 
 .practice-page {
@@ -1562,8 +1866,10 @@ onUnmounted(() => {
   align-items: center;
   gap: 16px;
   padding: clamp(16px, 2vw, 24px);
-  background: #fff;
-  border-bottom: 1px solid #e4e7ed;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border-color);
+  box-shadow: var(--shadow-sm);
 }
 
 .header-main {
@@ -1647,16 +1953,32 @@ onUnmounted(() => {
 }
 
 .subject-card {
-  min-height: 112px;
+  min-height: 120px;
   display: grid;
   align-content: center;
-  gap: 8px;
-  padding: 18px;
-  border: 1px solid #e4e7ed;
-  border-radius: 12px;
-  background: #fff;
+  gap: 10px;
+  padding: 20px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  background: white;
   text-align: left;
   cursor: pointer;
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.subject-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, var(--primary-color) 0%, #8b5cf6 50%, #f43f5e 100%);
+  transform: scaleX(0);
+  transition: transform 0.4s ease;
+  transform-origin: left;
 }
 
 .subject-card-head {
@@ -1667,25 +1989,33 @@ onUnmounted(() => {
 }
 
 .subject-card:hover {
-  border-color: #409eff;
-  background: #f5f9ff;
+  border-color: var(--primary-color);
+  background: white;
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-xl);
+}
+
+.subject-card:hover::before {
+  transform: scaleX(1);
 }
 
 .subject-card strong {
-  color: #303133;
+  color: var(--text-primary);
   font-size: 18px;
+  font-weight: 600;
 }
 
 .subject-card span {
-  color: #909399;
+  color: var(--text-secondary);
 }
 
 .practice-layout {
   flex: 1;
   display: grid;
-  grid-template-columns: minmax(280px, 26vw) minmax(0, 1fr);
+  grid-template-columns: clamp(240px, 22vw, 320px) minmax(0, 1fr);
   gap: clamp(14px, 1.8vw, 24px);
   padding: clamp(16px, 2vw, 24px);
+  align-items: start;
 }
 
 .type-filter {
@@ -1880,9 +2210,10 @@ onUnmounted(() => {
 }
 
 .question-list {
-  background: #fff;
-  border: 1px solid #e4e7ed;
-  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
   overflow-y: auto;
   overflow-x: hidden;
   scroll-behavior: smooth;
@@ -1891,6 +2222,7 @@ onUnmounted(() => {
   max-height: calc(100vh - 170px);
   display: flex;
   flex-direction: column;
+  box-shadow: var(--shadow-md);
 }
 
 .list-title {
@@ -1919,80 +2251,98 @@ onUnmounted(() => {
 
 .question-item {
   width: 100%;
-  min-height: 56px;
+  min-height: 60px;
   display: grid;
-  grid-template-columns: 34px 1fr 20px 22px;
+  grid-template-columns: 36px 1fr 24px 24px;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   border: 0;
-  border-bottom: 1px solid #f0f2f5;
-  background: #fff;
-  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-color);
+  background: transparent;
+  padding: 12px 16px;
   text-align: left;
   cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.question-item:hover {
+  background: var(--primary-light);
 }
 
 .question-item.active {
-  background: #ecf5ff;
+  background: linear-gradient(90deg, var(--primary-light) 0%, transparent 100%);
+}
+
+.question-item.active .question-number {
+  background: linear-gradient(135deg, var(--primary-color) 0%, #7c3aed 100%);
+  color: white;
 }
 
 .question-item.deleting.active {
-  background: #fef0f0;
+  background: #fef2f2;
 }
 
 .question-item.deleting {
-  grid-template-columns: 34px 24px 1fr 20px 22px;
+  grid-template-columns: 36px 24px 1fr 24px 24px;
 }
 
 .important-star {
-  color: #e6a23c;
+  color: var(--warning-color);
 }
 
 .question-item.done:not(.active) {
-  background: #fafafa;
+  background: #f8fafc;
 }
 
 .question-number {
   display: inline-flex;
   justify-content: center;
   align-items: center;
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
-  background: #f4f4f5;
+  background: #e2e8f0;
   font-weight: 600;
+  font-size: 13px;
+  color: var(--text-secondary);
+  transition: all 0.3s ease;
 }
 
 .question-summary {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: #606266;
+  color: var(--text-secondary);
+  font-size: 13px;
 }
 
 .status.correct {
-  color: #67c23a;
+  color: var(--success-color);
 }
 
 .status.pending {
-  color: #409eff;
+  color: var(--primary-color);
 }
 
 .status.wrong {
-  color: #f56c6c;
+  color: var(--danger-color);
 }
 
 .question-panel {
   min-width: 0;
+  display: flex;
 }
 
 .question-card {
-  width: min(100%, 860px);
-  margin: 0 auto;
-  background: #fff;
-  border: 1px solid #e4e7ed;
-  border-radius: 12px;
-  padding: clamp(18px, 2vw, 24px);
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: clamp(20px, 2vw, 28px);
+  box-shadow: var(--shadow-lg);
 }
 
 .question-meta {
@@ -2184,12 +2534,19 @@ onUnmounted(() => {
   }
 }
 
-@media (max-width: 960px) {
+@media (max-width: 1180px) {
+  .desktop-sidebar-handle {
+    display: none;
+  }
+
   .sidebar {
     position: fixed;
     width: min(82vw, 320px);
+    flex-basis: auto;
     max-width: 320px;
     height: 100vh;
+    left: 0;
+    top: 0;
     transform: translateX(-100%);
     box-shadow: 0 24px 64px rgba(15, 23, 42, 0.22);
   }
@@ -2345,5 +2702,43 @@ onUnmounted(() => {
     justify-content: flex-start;
     padding: 12px 16px;
   }
+}
+
+/* 编辑选项对话框样式 */
+.question-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 8px 14px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.edit-options-dialog {
+  padding: 10px 0;
+}
+
+.options-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.option-editor-item {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.option-key-input {
+  width: 80px;
+}
+
+.option-value-input {
+  flex: 1;
+}
+
+.options-actions {
+  margin-top: 16px;
+  display: flex;
+  justify-content: center;
 }
 </style>
