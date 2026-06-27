@@ -38,21 +38,25 @@ def get_wrong_questions(
         subject = db.query(Subject).filter(Subject.id == subject_id, Subject.user_id == current_user.id).first()
         if not subject:
             raise HTTPException(status_code=404, detail="科目不存在")
+        # 移除Question.user_id限制，允许查询所有科目中的错题
         query = query.join(Question, Question.id == WrongQuestion.question_id).filter(
             Question.subject_id == subject_id,
-            Question.deleted_at.is_(None),
-            Question.user_id == current_user.id,
+            Question.deleted_at.is_(None)
         )
     else:
+        # 移除Question.user_id限制，允许查询所有错题
         query = query.join(Question, Question.id == WrongQuestion.question_id).filter(
-            Question.deleted_at.is_(None),
-            Question.user_id == current_user.id,
+            Question.deleted_at.is_(None)
         )
 
     wrong_questions = query.order_by(WrongQuestion.added_at.desc()).all()
     result = []
     for wq in wrong_questions:
-        question = db.query(Question).filter(Question.id == wq.question_id, Question.deleted_at.is_(None), Question.user_id == current_user.id).first()
+        # 移除user_id限制，允许获取所有错题
+        question = db.query(Question).filter(
+            Question.id == wq.question_id,
+            Question.deleted_at.is_(None)
+        ).first()
         if not question:
             continue
         last_record = (

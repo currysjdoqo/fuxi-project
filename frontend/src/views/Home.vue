@@ -195,18 +195,43 @@
               <div class="practice-mode-controls">
                 <el-radio-group v-model="practiceMode" @change="applyPracticeQuestions()">
                   <el-radio-button label="sequential">顺序练习</el-radio-button>
+                  <el-radio-button label="range">范围练习</el-radio-button>
                   <el-radio-button label="random">随机抽题</el-radio-button>
                 </el-radio-group>
-                <el-input-number
-                  v-model="practiceQuestionCount"
-                  :min="1"
-                  :max="Math.max(allQuestions.length, 1)"
-                  :step="1"
-                  controls-position="right"
-                  class="count-input"
-                />
+                
+                <template v-if="practiceMode === 'range'">
+                  <span class="range-separator">第</span>
+                  <el-input-number
+                    v-model="practiceStartIndex"
+                    :min="1"
+                    :max="Math.max(allQuestions.length, 1)"
+                    :step="1"
+                    controls-position="right"
+                    class="range-input"
+                  />
+                  <span class="range-separator">-</span>
+                  <el-input-number
+                    v-model="practiceEndIndex"
+                    :min="practiceStartIndex"
+                    :max="Math.max(allQuestions.length, 1)"
+                    :step="1"
+                    controls-position="right"
+                    class="range-input"
+                  />
+                  <span class="range-separator">题</span>
+                </template>
+                <template v-else>
+                  <el-input-number
+                    v-model="practiceQuestionCount"
+                    :min="1"
+                    :max="Math.max(allQuestions.length, 1)"
+                    :step="1"
+                    controls-position="right"
+                    class="count-input"
+                  />
+                </template>
                 <el-button :disabled="!allQuestions.length" @click="applyPracticeQuestions()">
-                  {{ practiceMode === 'random' ? '重新抽题' : '应用数量' }}
+                  {{ practiceMode === 'random' ? '重新抽题' : practiceMode === 'range' ? '应用范围' : '应用数量' }}
                 </el-button>
               </div>
             </div>
@@ -601,6 +626,8 @@ const pendingSubmissions = ref([])
 const batchSubmitting = ref(false)
 const practiceMode = ref('sequential')
 const practiceQuestionCount = ref(20)
+const practiceStartIndex = ref(1)
+const practiceEndIndex = ref(20)
 const sidebarCollapsed = ref(false)
 const mobileNavOpen = ref(false)
 const viewportWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1280)
@@ -869,10 +896,9 @@ const resetPracticeState = () => {
 }
 
 const applyPracticeQuestions = (preferredQuestionId = Number(route.query.question_id) || null) => {
-  const count = normalizePracticeQuestionCount()
   const sourceQuestions = allQuestions.value
 
-  if (!sourceQuestions.length || count === 0) {
+  if (!sourceQuestions.length) {
     questions.value = []
     resetPracticeState()
     return
@@ -880,6 +906,7 @@ const applyPracticeQuestions = (preferredQuestionId = Number(route.query.questio
 
   let sessionQuestions = []
   if (practiceMode.value === 'random') {
+    const count = normalizePracticeQuestionCount()
     const preferredQuestion = preferredQuestionId
       ? sourceQuestions.find((question) => question.id === preferredQuestionId)
       : null
@@ -890,7 +917,16 @@ const applyPracticeQuestions = (preferredQuestionId = Number(route.query.questio
     if (preferredQuestion) {
       sessionQuestions.unshift(preferredQuestion)
     }
+  } else if (practiceMode.value === 'range') {
+    const start = Math.max(1, practiceStartIndex.value)
+    const end = Math.max(start, practiceEndIndex.value)
+    const maxEnd = sourceQuestions.length
+    const clampedEnd = Math.min(end, maxEnd)
+    practiceEndIndex.value = clampedEnd
+    
+    sessionQuestions = sourceQuestions.slice(start - 1, clampedEnd)
   } else {
+    const count = normalizePracticeQuestionCount()
     sessionQuestions = sourceQuestions.slice(0, count)
   }
 
@@ -1030,6 +1066,9 @@ const loadQuestions = async () => {
     allQuestions.value = await getQuestions(0, 1000, selectedSubject.value.id, selectedQuestionType.value)
     if (allQuestions.value.length && practiceQuestionCount.value > allQuestions.value.length) {
       practiceQuestionCount.value = allQuestions.value.length
+    }
+    if (allQuestions.value.length && practiceEndIndex.value > allQuestions.value.length) {
+      practiceEndIndex.value = allQuestions.value.length
     }
     applyPracticeQuestions()
   } catch (error) {
@@ -2041,6 +2080,15 @@ onUnmounted(() => {
 
 .count-input {
   width: 140px;
+}
+
+.range-input {
+  width: 100px;
+}
+
+.range-separator {
+  margin: 0 4px;
+  color: #606266;
 }
 
 .plan-float {

@@ -20,6 +20,15 @@ class GenerateRequest(BaseModel):
     subject_id: Optional[int] = None
 
 
+class ReviewSubmission(BaseModel):
+    question_id: int
+    user_answer: str
+
+
+class BatchReviewRequest(BaseModel):
+    submissions: List[ReviewSubmission]
+
+
 class ReviewQuestionOut(BaseModel):
     question_id: int
     type: str
@@ -54,21 +63,26 @@ def generate_review_questions(
         subject = db.query(Subject).filter(Subject.id == request.subject_id, Subject.user_id == current_user.id).first()
         if not subject:
             raise HTTPException(status_code=404, detail="科目不存在")
+        # 移除Question.user_id限制，允许生成所有科目中的错题复习
         query = query.join(Question, Question.id == WrongQuestion.question_id).filter(
             Question.subject_id == request.subject_id,
-            Question.deleted_at.is_(None),
-            Question.user_id == current_user.id,
+            Question.deleted_at.is_(None)
         )
     else:
+        # 移除Question.user_id限制，允许生成所有错题复习
         query = query.join(Question, Question.id == WrongQuestion.question_id).filter(
-            Question.deleted_at.is_(None),
-            Question.user_id == current_user.id,
+            Question.deleted_at.is_(None)
         )
 
     wrong_questions = query.order_by(func.random()).limit(request.count).all()
     result = []
     for wq in wrong_questions:
-        question = db.query(Question).filter(Question.id == wq.question_id, Question.deleted_at.is_(None), Question.user_id == current_user.id).first()
+        # 移除user_id限制，允许获取所有错题
+        question = db.query(Question).filter(
+            Question.id == wq.question_id,
+            Question.deleted_at.is_(None)
+        ).first()
+        
         if not question:
             continue
         result.append(
@@ -90,7 +104,12 @@ def submit_review_answer(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    question = db.query(Question).filter(Question.id == request.question_id, Question.deleted_at.is_(None), Question.user_id == current_user.id).first()
+    # 移除user_id限制，允许复习所有错题
+    question = db.query(Question).filter(
+        Question.id == request.question_id,
+        Question.deleted_at.is_(None)
+    ).first()
+    
     if not question:
         raise HTTPException(status_code=404, detail="题目不存在")
 
@@ -107,7 +126,10 @@ def submit_review_answer(
     threshold = get_wrong_question_threshold()
     removed_from_wrong = False
     remaining_to_remove = 0
-    wrong_question = db.query(WrongQuestion).filter(WrongQuestion.question_id == request.question_id, WrongQuestion.user_id == current_user.id).first()
+    wrong_question = db.query(WrongQuestion).filter(
+        WrongQuestion.question_id == request.question_id,
+        WrongQuestion.user_id == current_user.id
+    ).first()
 
     if is_correct:
         if wrong_question:
@@ -132,3 +154,73 @@ def submit_review_answer(
         "removed_from_wrong": removed_from_wrong,
         "remaining_to_remove": remaining_to_remove,
     }
+
+
+@router.post("/review/batch-submit")
+def batch_submit_review(
+    request: BatchReviewRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    threshold = get_wrong_question_threshold()
+    results = []
+    
+    for submission in request.submissions:
+        # 移除user_id限制，允许复习所有错题（包括公共题目）
+        question = db.query(Question).filter(
+            Question.id == submission.question_id,
+            Question.deleted_at.is_(None)
+        ).first()
+        
+        if not question:
+            results.append({
+                "question_id": submission.question_id,
+                "error": "题目不存在"
+            })
+            continue
+        
+        is_correct = is_answer_correct(question.type, submission.user_answer, question.answer)
+        
+        db.add(
+            PracticeRecord(
+                user_id=current_user.id,
+                question_id=submission.question_id,
+                user_answer=submission.user_answer,
+                is_correct=1 if is_correct else 0,
+            )
+        )
+        
+        removed_from_wrong = False
+        remaining_to_remove = 0
+        
+        wrong_question = db.query(WrongQuestion).filter(
+            WrongQuestion.question_id == submission.question_id,
+            WrongQuestion.user_id == current_user.id
+        ).first()
+        
+        if is_correct:
+            if wrong_question:
+                wrong_question.correct_count = (wrong_question.correct_count or 0) + 1
+                wrong_question.last_reviewed_at = datetime.utcnow()
+                if wrong_question.correct_count >= threshold:
+                    db.delete(wrong_question)
+                    removed_from_wrong = True
+                else:
+                    remaining_to_remove = threshold - wrong_question.correct_count
+        else:
+            if wrong_question:
+                wrong_question.review_count = wrong_question.review_count + 1
+                wrong_question.correct_count = 0
+                wrong_question.last_reviewed_at = datetime.utcnow()
+        
+        results.append({
+            "question_id": submission.question_id,
+            "is_correct": is_correct,
+            "correct_answer": question.answer,
+            "explanation": question.explanation,
+            "removed_from_wrong": removed_from_wrong,
+            "remaining_to_remove": remaining_to_remove,
+        })
+    
+    db.commit()
+    return {"results": results}

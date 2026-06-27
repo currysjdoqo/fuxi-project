@@ -2,8 +2,10 @@ import re
 from typing import List
 
 
-QUESTION_NO_RE = re.compile(r"^\s*\d+\s*$")
-OPTION_RE = re.compile(r"^\s*([A-Z])、\s*(.*)$", re.IGNORECASE)
+QUESTION_NO_RE = re.compile(r"^\s*\d+[.．、]?\s*$")
+OPTION_RE = re.compile(r"^\s*([A-Z])[.、)]\s*(.*)$", re.IGNORECASE)
+# 新增：匹配 "1. 题目内容" 这种格式的编号行
+QUESTION_NO_WITH_CONTENT_RE = re.compile(r"^\s*\d+[.．、]\s*(.+)$")
 ANSWER_RE = re.compile(r"(正确答案|参考答案|答案)\s*[:：]\s*(.*)")
 EXPLANATION_RE = re.compile(r"^答案解析\s*[:：]\s*(.*)$")
 HEADER_RE = re.compile(r"^\s*(?:[一二三四五六七八九十]+[.．、]\s*)?(单选题|多选题|多项选择题|选择题|判断题|填空题|简答题|编程题).*")
@@ -141,6 +143,22 @@ def parse_exercise_text(text: str) -> List[dict]:
             current = {
                 "type": current_section_type,
                 "content": [],
+                "options": {},
+                "answer": "",
+                "_answer_lines": [],
+                "explanation": [],
+            }
+            mode = "content"
+            last_option = None
+            continue
+
+        # 支持 "1. 题目内容" 格式，编号和题目在同一行
+        question_with_content_match = QUESTION_NO_WITH_CONTENT_RE.match(line)
+        if question_with_content_match:
+            _finish_question(current, questions)
+            current = {
+                "type": current_section_type,
+                "content": [question_with_content_match.group(1)],
                 "options": {},
                 "answer": "",
                 "_answer_lines": [],

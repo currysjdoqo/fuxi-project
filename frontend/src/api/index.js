@@ -191,6 +191,13 @@ export const batchSubmitAnswers = async (submissions) => {
   return response.data
 }
 
+export const batchSubmitReviewAnswers = async (submissions) => {
+  const response = await api.post('/review/batch-submit', {
+    submissions
+  })
+  return response.data
+}
+
 export const getWrongQuestions = async (subjectId = null) => {
   const response = await api.get('/wrong-questions', {
     params: { subject_id: subjectId }
