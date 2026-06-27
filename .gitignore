@@ -42,3 +42,16 @@ Desktop.ini
 # Temporary files
 *.tmp
 *.temp
+*.err
+*.msi
+
+# Test files
+test_*.py
+check_*.py
+fix_*.py
+
+# Codex skills
+codex/
+
+# Personal files
+开机启动.txt
