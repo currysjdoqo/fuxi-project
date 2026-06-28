@@ -10,7 +10,7 @@ from routers.settings import _get_deepseek_api_key
 
 # DeepSeek API 配置
 DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
-DEEPSEEK_MODEL = "deepseek-chat"
+DEEPSEEK_MODEL = "deepseek-v4-flash"
 
 
 def has_api_key() -> bool:
@@ -76,28 +76,29 @@ async def get_ai_explanation(
     if correct_answer:
         answer_info += f"\n正确答案：{correct_answer}"
 
+    # 构建选项文本
+    options_text = ""
+    if options:
+        if isinstance(options, dict):
+            for key in sorted(options.keys()):
+                options_text += f"{key}. {options[key]}\n"
+        elif isinstance(options, list):
+            for opt in options:
+                if isinstance(opt, dict):
+                    options_text += f"{opt.get('key', '')}. {opt.get('value', '')}\n"
+
     # 构建 Prompt
-    prompt = f"""你是一位专业的学习辅导老师，请对以下题目进行详细讲解。
+    prompt = f"""请作为辅导老师，简洁讲解这道题，帮助学生快速理解。
 
-{question_desc}
-{answer_info}
-{f'（科目：{subject_name}）' if subject_name else ''}
+题目：{question_content}
+{f'选项：\n{options_text}' if options_text else ''}
+正确答案：{correct_answer}
 
-请按以下格式进行讲解：
-
-## 题目分析
-【解释这道题考查的知识点，为什么正确答案是正确的】
-
-## 答案详解
-【详细解释每个选项（如果适用），说明为什么其他选项是错误的】
-
-## 知识点总结
-【列出本题涉及的核心知识点，帮助用户复习】
-
-## 学习建议
-【给出一到两条学习这类题目的建议】
-
-请用简洁清晰的语言进行讲解，适合学生理解。"""
+要求：
+1. 答案解析：一句话说清为什么选这个答案（不超过50字）
+2. 易错点：指出容易选错的原因（不超过30字）
+3. 知识点：1-2个核心知识点（简短）
+4. 语言要精炼，不要冗长，适合快速复习。"""
 
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
@@ -115,8 +116,8 @@ async def get_ai_explanation(
                             "content": prompt
                         }
                     ],
-                    "temperature": 0.7,
-                    "max_tokens": 1500
+                    "temperature": 0.5,
+                    "max_tokens": 800
                 }
             )
 
