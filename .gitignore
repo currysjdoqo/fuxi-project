@@ -49,6 +49,7 @@ Desktop.ini
 test_*.py
 check_*.py
 fix_*.py
+test_export.*
 
 # Codex skills
 codex/

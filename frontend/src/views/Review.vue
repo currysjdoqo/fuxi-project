@@ -305,6 +305,15 @@
                 >
                   下一题
                 </el-button>
+                <el-button :icon="ChatDotRound" :loading="aiLoading" @click="loadAiExplanation">
+                  AI讲解
+                </el-button>
+              </div>
+
+              <!-- AI 讲解内容 -->
+              <div v-if="aiExplanation" class="explanation-box ai">
+                <h3>AI 讲解</h3>
+                <div class="explanation-content" v-html="renderedExplanation"></div>
               </div>
             </div>
           </div>
@@ -332,10 +341,11 @@ import {
   Back,
   Loading,
   SuccessFilled,
-  CircleCloseFilled
+  CircleCloseFilled,
+  ChatDotRound
 } from '@element-plus/icons-vue'
 import { useSidebarLayout } from '../composables/useSidebarLayout'
-import { getSubjects, getWrongQuestions, submitReviewAnswer, batchSubmitReviewAnswers } from '../api'
+import { getSubjects, getWrongQuestions, submitReviewAnswer, batchSubmitReviewAnswers, getAiExplanation } from '../api'
 
 const router = useRouter()
 const route = useRoute()
@@ -354,6 +364,8 @@ const showExplanation = ref(false)
 const currentResult = ref(null)
 const pendingSubmissions = ref([])
 const batchSubmitting = ref(false)
+const aiLoading = ref(false)
+const aiExplanation = ref('')
 
 const reviewModes = ref({})
 const reviewQuestionCounts = ref({})
@@ -459,6 +471,16 @@ const resultTitle = computed(() => {
   return '提交中...'
 })
 const hasAnswered = computed(() => answers.value[currentIndex.value] !== undefined)
+
+// 简单的 Markdown 渲染
+const renderedExplanation = computed(() => {
+  if (!aiExplanation.value) return ''
+  let html = aiExplanation.value
+  html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>')
+  html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>')
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+  return html
+})
 const completedCount = computed(() => Object.values(answers.value).filter((item) => !item.isPending).length)
 const accuracyPercent = computed(() => {
   const completed = completedCount.value
@@ -476,6 +498,24 @@ const selectedAnswerList = computed({
     selectedAnswer.value = Array.isArray(val) ? val.sort().join('') : ''
   }
 })
+
+const loadAiExplanation = async () => {
+  if (!currentQuestion.value) return
+  aiLoading.value = true
+  aiExplanation.value = ''
+  try {
+    const result = await getAiExplanation(currentQuestion.value.id)
+    if (result.success) {
+      aiExplanation.value = result.explanation
+    } else {
+      ElMessage.error(result.message || '获取讲解失败')
+    }
+  } catch (error) {
+    ElMessage.error(`AI讲解失败：${error.response?.data?.detail || error.message}`)
+  } finally {
+    aiLoading.value = false
+  }
+}
 
 const loadSubjects = async () => {
   try {
@@ -565,6 +605,7 @@ const startReview = async (subject) => {
 const selectQuestion = (index) => {
   currentIndex.value = index
   selectedAnswer.value = ''
+  aiExplanation.value = ''  // 切换题目时清空 AI 讲解
   const answerState = answers.value[index]
   if (answerState) {
     showResult.value = true
@@ -1470,32 +1511,78 @@ onUnmounted(() => {
   .sidebar {
     transform: translateX(-240px);
   }
-  
+
   .sidebar.open {
     transform: translateX(0);
   }
-  
+
   .main-content {
     margin-left: 0;
   }
-  
+
   .desktop-sidebar-handle {
     display: none;
   }
-  
+
   .practice-main {
     grid-template-columns: 1fr;
     padding: 16px;
   }
-  
+
   .practice-sidebar {
     position: relative;
     top: 0;
     max-height: none;
   }
-  
+
   .subject-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* AI 讲解样式 */
+.explanation-box.ai {
+  margin-top: 20px;
+  padding: 16px;
+  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+  border: 1px solid #93c5fd;
+  border-radius: 8px;
+}
+
+.explanation-box.ai h3 {
+  margin: 0 0 12px;
+  font-size: 15px;
+  color: #1d4ed8;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.explanation-box.ai h3::before {
+  content: '🤖';
+}
+
+.explanation-content {
+  font-size: 14px;
+  line-height: 1.8;
+  color: #334155;
+}
+
+.explanation-content :deep(h2) {
+  font-size: 15px;
+  color: #2563eb;
+  margin: 12px 0 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid #bfdbfe;
+}
+
+.explanation-content :deep(h3) {
+  font-size: 14px;
+  color: #3b82f6;
+  margin: 10px 0 4px;
+}
+
+.explanation-content :deep(strong) {
+  color: #dc2626;
 }
 </style>

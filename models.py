@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import JSON, Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy import JSON, Column, DateTime, ForeignKey, Integer, String, UniqueConstraint
 
 from database import Base
 
@@ -53,10 +53,13 @@ class PracticeRecord(Base):
 
 class WrongQuestion(Base):
     __tablename__ = "wrong_questions"
+    __table_args__ = (
+        UniqueConstraint("user_id", "question_id", name="uq_wrong_questions_user_question"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=True)
-    question_id = Column(Integer, ForeignKey("questions.id"), nullable=False, unique=True)
+    question_id = Column(Integer, ForeignKey("questions.id"), nullable=False, index=True)
     added_at = Column(DateTime, default=datetime.utcnow)
     review_count = Column(Integer, default=0)
     correct_count = Column(Integer, default=0)

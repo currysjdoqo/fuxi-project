@@ -233,6 +233,9 @@
                 <el-button :disabled="!allQuestions.length" @click="applyPracticeQuestions()">
                   {{ practiceMode === 'random' ? '重新抽题' : practiceMode === 'range' ? '应用范围' : '应用数量' }}
                 </el-button>
+                <el-button type="success" :icon="Download" @click="openExportDialog" :disabled="!allQuestions.length">
+                  导出习题
+                </el-button>
               </div>
             </div>
           </section>
@@ -527,6 +530,14 @@
         <el-button type="primary" :loading="editOptionsLoading" @click="saveOptions">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- 导出对话框 -->
+    <ExportDialog
+      v-model:visible="exportDialogVisible"
+      :subject-id="selectedSubject?.id"
+      :subject-name="selectedSubject?.name"
+      :total-questions="allQuestions.length"
+    />
   </div>
 </template>
 
@@ -544,6 +555,7 @@ import {
   Delete,
   Document,
   DocumentCopy,
+  Download,
   Edit,
   List,
   Plus,
@@ -555,6 +567,7 @@ import {
   Star,
   StarFilled
 } from '@element-plus/icons-vue'
+import ExportDialog from '../components/ExportDialog.vue'
 import {
   batchDeleteQuestions,
   batchSubmitAnswers,
@@ -631,6 +644,7 @@ const practiceEndIndex = ref(20)
 const sidebarCollapsed = ref(false)
 const mobileNavOpen = ref(false)
 const viewportWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1280)
+const exportDialogVisible = ref(false)
 
 const goToPath = (path) => {
   if (route.path === path) return
@@ -1454,6 +1468,11 @@ const loadAiExplanation = async () => {
 
 const resetPractice = () => {
   applyPracticeQuestions()
+}
+
+// 打开导出对话框
+const openExportDialog = () => {
+  exportDialogVisible.value = true
 }
 
 watch(currentIndex, () => {

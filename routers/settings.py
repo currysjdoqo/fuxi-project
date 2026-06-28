@@ -1,7 +1,6 @@
 import json
 import os
 from pathlib import Path
-from urllib import error, request
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -10,11 +9,11 @@ from sqlalchemy.orm import Session
 from auth import get_current_user, verify_password
 from database import get_db
 from models import PracticeRecord, Question, Subject, User, WrongQuestion
+from utils.crypto import encrypt_api_key, decrypt_api_key
 
 router = APIRouter()
 
 ENV_PATH = Path(".env")
-DEEPSEEK_API_URL = "https://api.deepseek.com/chat/completions"
 WRONG_THRESHOLD_KEY = "WRONG_QUESTION_REMOVE_THRESHOLD"
 DEFAULT_WRONG_THRESHOLD = 1
 
@@ -25,15 +24,6 @@ class ApiKeyRequest(BaseModel):
 
 class WrongThresholdRequest(BaseModel):
     threshold: int
-
-
-class AiExplainRequest(BaseModel):
-    question_id: int
-
-
-class AiExplainResponse(BaseModel):
-    explanation: str
-    source: str
 
 
 class ClearDataRequest(BaseModel):
@@ -63,7 +53,12 @@ def _write_env_value(key: str, value: str) -> None:
 
 
 def _get_deepseek_api_key() -> str:
-    return os.getenv("DEEPSEEK_API_KEY") or _load_env_values().get("DEEPSEEK_API_KEY", "")
+    env_key = os.getenv("DEEPSEEK_API_KEY")
+    if env_key:
+        return decrypt_api_key(env_key)
+    
+    loaded_key = _load_env_values().get("DEEPSEEK_API_KEY", "")
+    return decrypt_api_key(loaded_key)
 
 
 def get_wrong_question_threshold() -> int:
@@ -100,9 +95,10 @@ def save_deepseek_key(
     if not api_key:
         raise HTTPException(status_code=400, detail="API Key 不能为空")
 
-    _write_env_value("DEEPSEEK_API_KEY", api_key)
-    os.environ["DEEPSEEK_API_KEY"] = api_key
-    return {"message": "DeepSeek API Key 已保存"}
+    encrypted_key = encrypt_api_key(api_key)
+    _write_env_value("DEEPSEEK_API_KEY", encrypted_key)
+    os.environ["DEEPSEEK_API_KEY"] = encrypted_key
+    return {"message": "DeepSeek API Key 已加密保存"}
 
 
 @router.post("/settings/wrong-threshold")
@@ -137,68 +133,3 @@ def clear_all_data(
     db.query(Subject).filter(Subject.user_id == current_user.id).delete()
     db.commit()
     return {"message": "所有数据已清空"}
-
-
-@router.post("/ai/explain", response_model=AiExplainResponse)
-def explain_question(
-    request_body: AiExplainRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    question = (
-        db.query(Question)
-        .filter(Question.id == request_body.question_id, Question.user_id == current_user.id)
-        .first()
-    )
-    if not question:
-        raise HTTPException(status_code=404, detail="题目不存在")
-
-    api_key = _get_deepseek_api_key()
-    if not api_key:
-        fallback = question.explanation or "暂无解析。请先在设置页面配置 DeepSeek API Key 后再使用 AI 讲解。"
-        return {"explanation": fallback, "source": "local"}
-
-    option_text = "\n".join(f"{key}. {value}" for key, value in sorted(question.options.items()))
-    prompt = (
-        "请用中文给学生讲解这道单选题，说明正确答案为什么正确，以及其他选项为什么不合适。"
-        "讲解要简洁、聚焦知识点。\n\n"
-        f"题干：{question.content}\n"
-        f"选项：\n{option_text}\n"
-        f"正确答案：{question.answer}\n"
-        f"已有解析：{question.explanation or '无'}"
-    )
-
-    payload = {
-        "model": "deepseek-chat",
-        "messages": [
-            {"role": "system", "content": "你是一名耐心、严谨的课程助教。"},
-            {"role": "user", "content": prompt},
-        ],
-        "temperature": 0.3,
-        "stream": False,
-    }
-
-    http_request = request.Request(
-        DEEPSEEK_API_URL,
-        data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
-
-    try:
-        with request.urlopen(http_request, timeout=30) as response:
-            data = json.loads(response.read().decode("utf-8"))
-    except error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="ignore") or str(exc)
-        raise HTTPException(status_code=502, detail=f"DeepSeek 调用失败：{detail}") from exc
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"DeepSeek 调用失败：{exc}") from exc
-
-    content = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
-    if not content:
-        raise HTTPException(status_code=502, detail="DeepSeek 未返回有效讲解")
-
-    return {"explanation": content, "source": "deepseek"}

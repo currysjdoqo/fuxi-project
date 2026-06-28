@@ -262,7 +262,14 @@ export const clearAllData = async (password) => {
 }
 
 export const getAiExplanation = async (questionId) => {
-  const response = await api.post('/ai/explain', { question_id: questionId })
+  const response = await api.get('/ai/explain', {
+    params: { question_id: questionId }
+  })
+  return response.data
+}
+
+export const checkAiApiStatus = async () => {
+  const response = await api.get('/ai/check')
   return response.data
 }
 
@@ -289,6 +296,60 @@ export const updatePlanItem = async (itemId, data) => {
 
 export const deletePlanItem = async (itemId) => {
   const response = await api.delete(`/plan/items/${itemId}`)
+  return response.data
+}
+
+// 导出相关API
+export const getExportFormats = async () => {
+  const response = await api.get('/export/formats')
+  return response.data
+}
+
+export const getExportTypes = async () => {
+  const response = await api.get('/export/types')
+  return response.data
+}
+
+export const getExportInfo = async (subjectId) => {
+  const response = await api.get('/export/info', {
+    params: { subject_id: subjectId }
+  })
+  return response.data
+}
+
+export const previewExport = async (subjectId, format = 'word', includeAnswer = true, includeAnalysis = true) => {
+  const response = await api.get('/export/preview', {
+    params: {
+      subject_id: subjectId,
+      format,
+      include_answer: includeAnswer,
+      include_analysis: includeAnalysis
+    }
+  })
+  return response.data
+}
+
+export const exportQuestions = async (subjectId, options = {}) => {
+  const {
+    format = 'word',
+    includeAnswer = true,
+    includeAnalysis = true,
+    questionTypes = null
+  } = options
+
+  const params = new URLSearchParams()
+  params.append('subject_id', subjectId)
+  params.append('format', format)
+  params.append('include_answer', includeAnswer)
+  params.append('include_analysis', includeAnalysis)
+  if (questionTypes && questionTypes.length > 0) {
+    params.append('question_types', questionTypes.join(','))
+  }
+
+  const response = await api.get('/export/download', {
+    params,
+    responseType: 'blob'
+  })
   return response.data
 }
 
