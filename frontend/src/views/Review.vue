@@ -101,8 +101,17 @@
               </div>
               <div class="subject-info">
                 <h3>{{ subject.name }}</h3>
-                <p>{{ subject.wrong_count || 0 }} 道错题</p>
-                <div v-if="subject.wrong_count" class="review-mode-selection">
+                <p>{{ getReviewSourceCountLabel(subject) }}</p>
+                <div class="review-mode-selection">
+                  <el-radio-group
+                    :model-value="reviewSources[subject.id] || 'wrong'"
+                    @update:model-value="(source) => updateReviewSource(subject.id, source)"
+                    size="small"
+                  >
+                    <el-radio-button label="wrong">复习错题</el-radio-button>
+                    <el-radio-button label="important">复习重点题</el-radio-button>
+                    <el-radio-button label="combined">错题和重点题总和</el-radio-button>
+                  </el-radio-group>
                   <el-radio-group 
                     :model-value="reviewModes[subject.id] || 'sequential'" 
                     @update:model-value="(mode) => updateReviewMode(subject.id, mode)"
@@ -119,7 +128,7 @@
                         :model-value="reviewStartIndices[subject.id] || 1"
                         @update:model-value="(val) => reviewStartIndices[subject.id] = val"
                         :min="1"
-                        :max="subject.wrong_count"
+                        :max="Math.max(subject.question_count || 1, 1)"
                         :step="1"
                         controls-position="right"
                         size="small"
@@ -129,7 +138,7 @@
                         :model-value="reviewEndIndices[subject.id] || Math.min(10, subject.wrong_count)"
                         @update:model-value="(val) => reviewEndIndices[subject.id] = val"
                         :min="(reviewStartIndices[subject.id] || 1)"
-                        :max="subject.wrong_count"
+                        :max="Math.max(subject.question_count || 1, 1)"
                         :step="1"
                         controls-position="right"
                         size="small"
@@ -141,14 +150,14 @@
                       :model-value="reviewQuestionCounts[subject.id] || Math.min(10, subject.wrong_count)"
                       @update:model-value="(val) => reviewQuestionCounts[subject.id] = val"
                       :min="1"
-                      :max="subject.wrong_count"
+                      :max="Math.max(subject.question_count || 1, 1)"
                       :step="1"
                       controls-position="right"
                       size="small"
                     />
                   </template>
                 </div>
-                <el-button type="primary" :disabled="!subject.wrong_count" @click="startReview(subject)">开始复习</el-button>
+                <el-button type="primary" @click="startReview(subject)">开始复习</el-button>
               </div>
             </div>
           </div>
@@ -173,7 +182,7 @@
             <div class="question-nav">
               <div
                 v-for="(q, index) in questions"
-                :key="q.id"
+                :key="q.question_id || q.id"
                 class="question-dot"
                 :class="{
                   'active': index === currentIndex,
@@ -272,7 +281,7 @@
                 </div>
                 <div class="result-content">
                   <h3>{{ resultTitle }}</h3>
-                  <p v-if="currentQuestion.answer">参考答案：{{ resultTitle }}</p>
+                  <p v-if="currentQuestion.answer">参考答案：{{ displayAnswer(currentQuestion) }}</p>
                 </div>
               </div>
 
@@ -307,15 +316,34 @@
                 >
                   下一题
                 </el-button>
-                <el-button :icon="ChatDotRound" :loading="aiLoading" @click="loadAiExplanation">
+                <el-button v-if="showResult && !currentQuestion?.explanation" :icon="ChatDotRound" :loading="aiLoading" @click="loadAiExplanation">
                   AI讲解
+                </el-button>
+                <el-button v-else-if="currentQuestion?.explanation" type="info" disabled>
+                  已有解析
                 </el-button>
               </div>
 
-              <!-- AI 讲解内容 -->
-              <div v-if="aiExplanation" class="explanation-box ai">
-                <h3>AI 讲解</h3>
-                <div class="explanation-content" v-html="renderedExplanation"></div>
+              <!-- 解析内容 -->
+              <div v-if="showResult && currentQuestion?.explanation" class="explanation-box">
+                <div class="explanation-header">
+                  <h3>题目解析</h3>
+                  <div class="explanation-actions">
+                    <el-button v-if="!editingExplanation" size="small" text @click="startEditExplanation">
+                      编辑
+                    </el-button>
+                    <template v-else>
+                      <el-button size="small" type="primary" @click="saveExplanation">
+                        保存
+                      </el-button>
+                      <el-button size="small" text @click="cancelEditExplanation">
+                        取消
+                      </el-button>
+                    </template>
+                  </div>
+                </div>
+                <div v-if="!editingExplanation" class="explanation-content" v-html="renderedQuestionExplanation"></div>
+                <textarea v-else v-model="editableExplanation" class="explanation-textarea"></textarea>
               </div>
             </div>
           </div>
@@ -354,12 +382,13 @@ import {
 } from '@element-plus/icons-vue'
 import { useSidebarLayout } from '../composables/useSidebarLayout'
 import { useUser } from '../composables/useUser'
-import { getSubjects, getWrongQuestions, submitReviewAnswer, batchSubmitReviewAnswers, getAiExplanation } from '../api'
+import { getSubjects, getWrongQuestions, getQuestions, submitReviewAnswer, batchSubmitReviewAnswers, getAiExplanation, updateQuestionExplanation } from '../api'
+import { getErrorMessage } from '../utils/errorHandler'
 
 const router = useRouter()
 const route = useRoute()
 const { sidebarCollapsed, mobileNavOpen, isMobileNav, toggleSidebar, toggleMobileNav, closeMobileNav } = useSidebarLayout()
-const { username, avatar } = useUser()
+const { username, avatar, loadUserInfo } = useUser()
 
 const showProfileModal = ref(false)
 const loading = ref(false)
@@ -376,11 +405,16 @@ const pendingSubmissions = ref([])
 const batchSubmitting = ref(false)
 const aiLoading = ref(false)
 const aiExplanation = ref('')
+const editingExplanation = ref(false)
+const editableExplanation = ref('')
 
 const reviewModes = ref({})
+const reviewSources = ref({})
 const reviewQuestionCounts = ref({})
 const reviewStartIndices = ref({})
 const reviewEndIndices = ref({})
+const importantCounts = ref({})
+const combinedCounts = ref({})
 
 const currentReviewMode = computed(() => {
   return selectedSubject.value ? reviewModes.value[selectedSubject.value.id] || 'sequential' : 'sequential'
@@ -423,13 +457,34 @@ const updateReviewMode = (subjectId, mode) => {
   reviewModes.value[subjectId] = mode
 }
 
+const updateReviewSource = (subjectId, source) => {
+  reviewSources.value[subjectId] = source
+}
+
+const getReviewSourceCount = (subject) => {
+  const source = reviewSources.value[subject.id] || 'wrong'
+  const wrongCount = subject.wrong_count || 0
+  const importantCount = importantCounts.value[subject.id] || 0
+
+  if (source === 'important') return importantCount
+  if (source === 'combined') return combinedCounts.value[subject.id] || 0
+  return wrongCount
+}
+
+const getReviewSourceCountLabel = (subject) => {
+  const source = reviewSources.value[subject.id] || 'wrong'
+  const count = getReviewSourceCount(subject)
+
+  if (source === 'important') return `${count} 道重点题`
+  if (source === 'combined') return `${count} 道错题和重点题总和`
+  return `${count} 道错题`
+}
+
 const navItems = [
   { path: '/', label: '练习模式', icon: Document },
   { path: '/plan', label: '学习计划', icon: List },
   { path: '/import', label: '导入习题', icon: Plus },
-  { path: '/wrong', label: '错题本', icon: CircleClose },
   { path: '/review', label: '复习模式', icon: Refresh },
-  { path: '/important', label: '重点题', icon: Star },
   { path: '/trash', label: '垃圾桶', icon: Delete },
   { path: '/settings', label: '设置', icon: Setting },
 ]
@@ -451,6 +506,7 @@ const handleLogout = () => {
 }
 
 const currentQuestion = computed(() => questions.value[currentIndex.value])
+const currentQuestionId = computed(() => currentQuestion.value?.question_id ?? currentQuestion.value?.id ?? null)
 const isOptionQuestion = computed(() => ['single', 'multi', 'judge'].includes(currentQuestion.value?.type))
 const isMultiQuestion = computed(() => currentQuestion.value?.type === 'multi')
 const answerOptions = computed(() => {
@@ -482,10 +538,18 @@ const resultTitle = computed(() => {
 })
 const hasAnswered = computed(() => answers.value[currentIndex.value] !== undefined)
 
-// 简单的 Markdown 渲染
 const renderedExplanation = computed(() => {
   if (!aiExplanation.value) return ''
   let html = aiExplanation.value
+  html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>')
+  html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>')
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+  return html
+})
+
+const renderedQuestionExplanation = computed(() => {
+  if (!currentQuestion.value?.explanation) return ''
+  let html = currentQuestion.value.explanation
   html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>')
   html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>')
   html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
@@ -510,20 +574,61 @@ const selectedAnswerList = computed({
 })
 
 const loadAiExplanation = async () => {
-  if (!currentQuestion.value) return
+  if (!currentQuestion.value || !currentQuestionId.value) {
+    ElMessage.error('当前题目缺少有效ID，无法获取AI讲解')
+    return
+  }
   aiLoading.value = true
   aiExplanation.value = ''
   try {
-    const result = await getAiExplanation(currentQuestion.value.id)
+    const result = await getAiExplanation(currentQuestionId.value)
     if (result.success) {
-      aiExplanation.value = result.explanation
+      const saveResult = await updateQuestionExplanation(currentQuestionId.value, result.explanation)
+      if (saveResult.success) {
+        currentQuestion.value.explanation = result.explanation
+        editingExplanation.value = false
+        editableExplanation.value = ''
+        ElMessage.success('AI解析已自动保存')
+      } else {
+        ElMessage.error('AI解析生成成功，但自动保存失败')
+      }
     } else {
       ElMessage.error(result.message || '获取讲解失败')
     }
   } catch (error) {
-    ElMessage.error(`AI讲解失败：${error.response?.data?.detail || error.message}`)
+    ElMessage.error(`AI讲解失败：${getErrorMessage(error, '获取讲解失败')}`)
   } finally {
     aiLoading.value = false
+  }
+}
+
+const startEditExplanation = () => {
+  editableExplanation.value = currentQuestion.value?.explanation || ''
+  editingExplanation.value = true
+}
+
+const cancelEditExplanation = () => {
+  editingExplanation.value = false
+  editableExplanation.value = ''
+}
+
+const saveExplanation = async () => {
+  if (!currentQuestion.value || !currentQuestionId.value) {
+    ElMessage.error('当前题目缺少有效ID，无法保存解析')
+    return
+  }
+  try {
+    const result = await updateQuestionExplanation(currentQuestionId.value, editableExplanation.value)
+    if (result.success) {
+      currentQuestion.value.explanation = editableExplanation.value
+      editingExplanation.value = false
+      editableExplanation.value = ''
+      ElMessage.success('解析保存成功')
+    } else {
+      ElMessage.error('保存失败')
+    }
+  } catch (error) {
+    ElMessage.error(`保存失败：${getErrorMessage(error, '保存失败')}`)
   }
 }
 
@@ -531,8 +636,42 @@ const loadSubjects = async () => {
   try {
     loading.value = true
     subjects.value = await getSubjects()
+    const [allWrongQuestions, allImportantQuestions] = await Promise.all([
+      getWrongQuestions(),
+      getQuestions(0, 1000, null, 'all', true)
+    ])
+
+    const wrongIdsBySubject = new Map()
+    allWrongQuestions.forEach((question) => {
+      const subjectId = question.subject_id
+      if (!subjectId) return
+      if (!wrongIdsBySubject.has(subjectId)) wrongIdsBySubject.set(subjectId, new Set())
+      wrongIdsBySubject.get(subjectId).add(question.question_id || question.id)
+    })
+
+    const importantCountMap = {}
+    const combinedCountMap = {}
+
+    allImportantQuestions.forEach((question) => {
+      const subjectId = question.subject_id
+      if (!subjectId) return
+      importantCountMap[subjectId] = (importantCountMap[subjectId] || 0) + 1
+    })
+
+    subjects.value.forEach((subject) => {
+      const subjectId = subject.id
+      const wrongIds = wrongIdsBySubject.get(subjectId) || new Set()
+      const importantQuestions = allImportantQuestions.filter((question) => question.subject_id === subjectId)
+      const importantOnlyCount = importantQuestions.filter((question) => !wrongIds.has(question.id)).length
+
+      importantCountMap[subjectId] = importantCountMap[subjectId] || 0
+      combinedCountMap[subjectId] = wrongIds.size + importantOnlyCount
+    })
+
+    importantCounts.value = importantCountMap
+    combinedCounts.value = combinedCountMap
   } catch (error) {
-    ElMessage.error(`加载科目失败：${error.response?.data?.detail || error.message}`)
+    ElMessage.error(`加载科目失败：${getErrorMessage(error, '加载失败')}`)
   } finally {
     loading.value = false
   }
@@ -540,6 +679,9 @@ const loadSubjects = async () => {
 
 const handleSubjectClick = async (subject) => {
   // 点击科目卡片时，初始化该科目的复习设置（如果尚未初始化）
+  if (!reviewSources.value[subject.id]) {
+    reviewSources.value[subject.id] = 'wrong'
+  }
   if (!reviewModes.value[subject.id]) {
     reviewModes.value[subject.id] = 'sequential'
   }
@@ -552,26 +694,58 @@ const handleSubjectClick = async (subject) => {
 }
 
 const startReview = async (subject) => {
-  if (!subject.wrong_count) {
-    ElMessage.warning('该科目暂无错题')
-    return
-  }
-  
   try {
     loading.value = true
     selectedSubject.value = subject
     
     // 获取当前科目的复习设置
+    const source = reviewSources.value[subject.id] || 'wrong'
     const mode = reviewModes.value[subject.id] || 'sequential'
-    const questionCount = reviewQuestionCounts.value[subject.id] || Math.min(10, subject.wrong_count)
+    const questionCount = reviewQuestionCounts.value[subject.id] || Math.min(10, subject.question_count || 10)
     const startIndex = reviewStartIndices.value[subject.id] || 1
-    const endIndex = reviewEndIndices.value[subject.id] || Math.min(10, subject.wrong_count)
-    
-    // 加载所有错题
-    const allWrongQuestions = await getWrongQuestions(subject.id)
-    
-    if (!allWrongQuestions.length) {
-      ElMessage.warning('该科目暂无错题')
+    const endIndex = reviewEndIndices.value[subject.id] || Math.min(10, subject.question_count || 10)
+
+    const [allWrongQuestions, allImportantQuestions] = await Promise.all([
+      getWrongQuestions(subject.id),
+      getQuestions(0, 1000, subject.id, 'all', true)
+    ])
+
+    const wrongQuestionIds = new Set(allWrongQuestions.map((question) => question.question_id || question.id))
+    let sourceQuestions = []
+
+    if (source === 'wrong') {
+      sourceQuestions = allWrongQuestions
+    } else if (source === 'important') {
+      sourceQuestions = allImportantQuestions.map((question) => ({
+        question_id: question.id,
+        subject_id: question.subject_id,
+        type: question.type,
+        content: question.content,
+        options: question.options,
+        answer: question.answer,
+        explanation: question.explanation,
+        is_important: question.is_important,
+      }))
+    } else {
+      const importantOnlyQuestions = allImportantQuestions
+        .filter((question) => !wrongQuestionIds.has(question.id))
+        .map((question) => ({
+          question_id: question.id,
+          subject_id: question.subject_id,
+          type: question.type,
+          content: question.content,
+          options: question.options,
+          answer: question.answer,
+          explanation: question.explanation,
+          is_important: question.is_important,
+        }))
+
+      sourceQuestions = [...allWrongQuestions, ...importantOnlyQuestions]
+    }
+
+    if (!sourceQuestions.length) {
+      const sourceLabel = source === 'important' ? '重点题' : source === 'combined' ? '错题和重点题总和' : '错题'
+      ElMessage.warning(`该科目暂无可复习的${sourceLabel}`)
       selectedSubject.value = null
       return
     }
@@ -579,19 +753,16 @@ const startReview = async (subject) => {
     // 根据复习方式选择题目
     let sessionQuestions = []
     if (mode === 'random') {
-      // 随机抽题
-      const count = Math.min(questionCount, allWrongQuestions.length)
-      const shuffled = [...allWrongQuestions].sort(() => Math.random() - 0.5)
+      const count = Math.min(questionCount, sourceQuestions.length)
+      const shuffled = [...sourceQuestions].sort(() => Math.random() - 0.5)
       sessionQuestions = shuffled.slice(0, count)
     } else if (mode === 'range') {
-      // 范围复习
       const start = Math.max(1, startIndex) - 1
-      const end = Math.min(endIndex, allWrongQuestions.length)
-      sessionQuestions = allWrongQuestions.slice(start, end)
+      const end = Math.min(endIndex, sourceQuestions.length)
+      sessionQuestions = sourceQuestions.slice(start, end)
     } else {
-      // 顺序复习
-      const count = Math.min(questionCount, allWrongQuestions.length)
-      sessionQuestions = allWrongQuestions.slice(0, count)
+      const count = Math.min(questionCount, sourceQuestions.length)
+      sessionQuestions = sourceQuestions.slice(0, count)
     }
     
     questions.value = sessionQuestions
@@ -603,9 +774,10 @@ const startReview = async (subject) => {
     currentResult.value = null
     pendingSubmissions.value = []
     
-    ElMessage.success(`已加载 ${sessionQuestions.length} 道错题`)
+    const sourceLabel = source === 'important' ? '重点题' : source === 'combined' ? '错题和重点题总和' : '错题'
+    ElMessage.success(`已加载 ${sessionQuestions.length} 道${sourceLabel}`)
   } catch (error) {
-    ElMessage.error(`加载错题失败：${error.response?.data?.detail || error.message}`)
+    ElMessage.error(`加载错题失败：${getErrorMessage(error, '加载失败')}`)
     selectedSubject.value = null
   } finally {
     loading.value = false
@@ -615,7 +787,6 @@ const startReview = async (subject) => {
 const selectQuestion = (index) => {
   currentIndex.value = index
   selectedAnswer.value = ''
-  aiExplanation.value = ''  // 切换题目时清空 AI 讲解
   const answerState = answers.value[index]
   if (answerState) {
     showResult.value = true
@@ -665,10 +836,10 @@ const submitCurrentAnswer = async () => {
     currentResult.value = answers.value[currentIndex.value]
     
     // 将答案加入待提交队列
-    const existingSubmission = pendingSubmissions.value.find(s => s.question_id === currentQuestion.value.id)
+    const existingSubmission = pendingSubmissions.value.find(s => s.question_id === currentQuestionId.value)
     if (!existingSubmission) {
       pendingSubmissions.value.push({
-        question_id: currentQuestion.value.id,
+        question_id: currentQuestionId.value,
         user_answer: userAnswer,
         index: currentIndex.value
       })
@@ -705,10 +876,10 @@ const submitCurrentAnswer = async () => {
     showResult.value = true
     showExplanation.value = true
     
-    const existingSubmission = pendingSubmissions.value.find(s => s.question_id === currentQuestion.value.id)
+    const existingSubmission = pendingSubmissions.value.find(s => s.question_id === currentQuestionId.value)
     if (!existingSubmission) {
       pendingSubmissions.value.push({
-        question_id: currentQuestion.value.id,
+        question_id: currentQuestionId.value,
         user_answer: selectedAnswer.value,
         index: currentIndex.value
       })
@@ -779,7 +950,7 @@ const submitAllPending = async () => {
     ElMessage.success(`批量提交完成，共提交 ${result.results.length} 题`)
   } catch (error) {
     console.error('批量提交失败:', error)
-    ElMessage.error(`批量提交失败：${error.response?.data?.detail || error.message}`)
+    ElMessage.error(`批量提交失败：${getErrorMessage(error, '提交失败')}`)
   } finally {
     batchSubmitting.value = false
   }
@@ -789,7 +960,7 @@ const submitSelfEvaluation = async (isCorrect) => {
   if (!currentQuestion.value || !currentAnswerState.value?.isPending) return
   loading.value = true
   try {
-    const result = await submitReviewAnswer(currentQuestion.value.id, currentAnswerState.value.userAnswer)
+    const result = await submitReviewAnswer(currentQuestionId.value, currentAnswerState.value.userAnswer)
     answers.value[currentIndex.value] = {
       isCorrect: isCorrect,
       isPending: false,
@@ -797,7 +968,7 @@ const submitSelfEvaluation = async (isCorrect) => {
     }
     
     pendingSubmissions.value = pendingSubmissions.value.filter(
-      s => s.question_id !== currentQuestion.value.id
+      s => s.question_id !== currentQuestionId.value
     )
     
     showResult.value = true
@@ -819,7 +990,7 @@ const submitSelfEvaluation = async (isCorrect) => {
       ElMessage.warning('已标记为错误，并加入错题本')
     }
   } catch (error) {
-    ElMessage.error(`提交自评失败：${error.response?.data?.detail || error.message}`)
+    ElMessage.error(`提交自评失败：${getErrorMessage(error, '提交失败')}`)
   } finally {
     loading.value = false
   }
@@ -852,6 +1023,14 @@ const getQuestionTypeName = (type) => {
     code: '编程'
   }
   return typeMap[type] || type
+}
+
+const displayAnswer = (question) => {
+  if (!question) return ''
+  if (question.type === 'judge') {
+    return question.answer === 'T' ? '正确' : question.answer === 'F' ? '错误' : question.answer
+  }
+  return question.answer || ''
 }
 
 const getSubjectIcon = (subjectName) => {
@@ -998,92 +1177,124 @@ onUnmounted(() => {
 }
 
 .user-section {
-  padding: 16px 20px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 20px;
+  border-top: 1px solid var(--border-color);
+  background: #f8fafc;
 }
 
 .user-info {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
+  padding: 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+  transition: box-shadow 0.25s ease, transform 0.25s ease;
+}
+
+.user-info:hover {
+  box-shadow: 0 14px 28px rgba(15, 23, 42, 0.12);
+  transform: translateY(-1px);
 }
 
 .avatar {
-  font-size: 32px;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(135deg, #2563eb 0%, #ef4444 100%);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.28);
+  cursor: pointer;
+  flex-shrink: 0;
 }
 
 .user-details {
   flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
 }
 
 .username {
-  font-weight: 500;
-  font-size: 14px;
-  color: white;
+  font-weight: 600;
+  font-size: 15px;
+  color: #0f172a;
 }
 
 .logout-btn {
-  font-size: 12px;
-  color: #94a3b8;
+  font-size: 13px;
+  color: #64748b;
   cursor: pointer;
-  transition: color 0.2s ease;
+  transition: color 0.2s ease, background 0.2s ease;
+  border-radius: 8px;
+  padding: 4px 8px;
+  width: fit-content;
 }
 
 .logout-btn:hover {
-  color: #ef4444;
+  color: #dc2626;
+  background: rgba(239, 68, 68, 0.08);
 }
 
 .main-content {
   flex: 1;
-  margin-left: 240px;
+  position: relative;
+  min-width: 0;
   min-height: 100vh;
-  background: linear-gradient(180deg, #f0f9ff 0%, #fafafa 100%);
-  transition: margin-left 0.3s ease;
-}
-
-.app-layout.sidebar-collapsed .main-content {
-  margin-left: 0;
+  transition: width 0.25s ease;
 }
 
 .desktop-sidebar-handle {
   position: fixed;
-  left: 240px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 20px;
-  height: 60px;
-  background: #3b82f6;
-  color: white;
-  border: none;
-  border-radius: 0 4px 4px 0;
+  top: 24px;
+  left: calc(var(--sidebar-width, 240px) - 18px);
+  z-index: 110;
+  width: 36px;
+  height: 36px;
+  border: 1px solid #dbeafe;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.96);
+  color: #1d4ed8;
+  font-size: 18px;
+  line-height: 1;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
   cursor: pointer;
-  z-index: 99;
-  transition: left 0.3s ease;
-  font-weight: bold;
-  font-size: 14px;
+  transition: left 0.25s ease, background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
 }
 
-.app-layout.sidebar-collapsed .desktop-sidebar-handle {
-  left: 0;
+.desktop-sidebar-handle:hover {
+  background: #1d4ed8;
+  color: #fff;
+  box-shadow: 0 14px 28px rgba(29, 78, 216, 0.2);
+}
+
+.desktop-sidebar-handle.collapsed {
+  left: 12px;
 }
 
 .practice-page {
   min-height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
 
 .page-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 18px 24px;
-  background: #fff;
-  border-bottom: 1px solid #e4e7ed;
-  position: sticky;
-  top: 0;
-  z-index: 50;
+  gap: 16px;
+  padding: clamp(16px, 2vw, 24px);
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid #dbe3ef;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
 }
 
 .header-main {
@@ -1100,13 +1311,13 @@ onUnmounted(() => {
 .subject-chip {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
-  color: #1e40af;
-  border-radius: 6px;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8;
   font-size: 13px;
-  font-weight: 500;
 }
 
 .page-header h1 {
@@ -1117,19 +1328,21 @@ onUnmounted(() => {
 
 .page-header p {
   margin: 0;
-  color: #909399;
+  color: #64748b;
   font-size: 13px;
 }
 
-.header-actions {
+.header-actions,
+.action-buttons {
   display: flex;
-  gap: 12px;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 .subject-page {
-  max-width: 1200px;
-  margin: 24px auto;
-  padding: 0 24px;
+  width: 100%;
+  margin: 0 auto;
+  padding: clamp(16px, 2vw, 24px);
 }
 
 .loading-wrapper {
@@ -1148,38 +1361,52 @@ onUnmounted(() => {
 
 .subject-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 20px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  gap: 18px;
 }
 
 .subject-card {
-  background: #fff;
-  border: 1px solid #e4e7ed;
-  border-radius: 12px;
-  padding: 24px;
+  min-height: 220px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(248, 250, 252, 0.94) 100%);
+  border: 1px solid #dbe3ef;
+  border-radius: 18px;
+  padding: 22px;
   cursor: pointer;
-  transition: all 0.3s ease;
+  transition: transform 0.28s ease, box-shadow 0.28s ease, border-color 0.28s ease;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.05);
+}
+
+.subject-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 100%;
+  height: 4px;
+  background: linear-gradient(90deg, #2563eb 0%, #38bdf8 52%, #22c55e 100%);
 }
 
 .subject-card:hover {
   transform: translateY(-4px);
-  box-shadow: 0 12px 24px -8px rgba(0, 0, 0, 0.1);
-  border-color: #3b82f6;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.12);
+  border-color: #93c5fd;
 }
 
 .subject-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: 10px;
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
   background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #1e40af;
-  font-size: 24px;
+  color: #1d4ed8;
+  font-size: 28px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
 }
 
 .subject-info h3 {
@@ -1189,16 +1416,16 @@ onUnmounted(() => {
 }
 
 .subject-info p {
-  margin: 0 0 12px;
-  color: #909399;
+  margin: 0;
+  color: #64748b;
   font-size: 13px;
 }
 
 .review-mode-selection {
-  margin: 12px 0;
+  margin: 2px 0 6px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   align-items: flex-start;
 }
 
@@ -1224,12 +1451,12 @@ onUnmounted(() => {
 }
 
 .practice-main {
+  flex: 1;
   display: grid;
-  grid-template-columns: 280px 1fr;
-  gap: 24px;
-  max-width: 1400px;
-  margin: 0 auto;
-  padding: 24px;
+  grid-template-columns: clamp(240px, 22vw, 320px) minmax(0, 1fr);
+  gap: clamp(14px, 1.8vw, 24px);
+  padding: clamp(16px, 2vw, 24px);
+  align-items: start;
 }
 
 .practice-sidebar {
@@ -1237,26 +1464,27 @@ onUnmounted(() => {
   flex-direction: column;
   gap: 16px;
   position: sticky;
-  top: 120px;
-  height: fit-content;
-  max-height: calc(100vh - 120px);
+  top: 24px;
+  align-self: start;
 }
 
 .sidebar-stats {
-  background: #fff;
-  border: 1px solid #e4e7ed;
-  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(12px);
+  border: 1px solid #dbe3ef;
+  border-radius: 18px;
   padding: 16px;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
+  gap: 10px;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
 }
 
 .stat-item {
   text-align: center;
-  padding: 8px;
-  background: #f5f7fa;
-  border-radius: 6px;
+  padding: 10px 8px;
+  background: linear-gradient(180deg, #f8fbff 0%, #eef4ff 100%);
+  border-radius: 12px;
 }
 
 .stat-label {
@@ -1276,20 +1504,22 @@ onUnmounted(() => {
 .question-nav {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  background: #fff;
-  border: 1px solid #e4e7ed;
-  border-radius: 8px;
-  padding: 12px;
-  max-height: 400px;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(12px);
+  border: 1px solid #dbe3ef;
+  border-radius: 18px;
+  padding: 14px;
+  max-height: calc(100vh - 280px);
   overflow-y: auto;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
 }
 
 .question-dot {
-  width: 32px;
-  height: 32px;
-  border-radius: 6px;
-  border: 1px solid #d9d9d9;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid #d7deea;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1340,15 +1570,18 @@ onUnmounted(() => {
 }
 
 .question-content {
-  min-height: 0;
+  min-width: 0;
+  display: flex;
 }
 
 .question-card {
-  background: #fff;
-  border: 1px solid #e4e7ed;
-  border-radius: 12px;
-  padding: 24px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  width: 100%;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(12px);
+  border: 1px solid #dbe3ef;
+  border-radius: 22px;
+  padding: clamp(20px, 2vw, 28px);
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
 }
 
 .question-header {
@@ -1402,9 +1635,12 @@ onUnmounted(() => {
 }
 
 .question-text {
+  padding: 18px;
+  background: linear-gradient(180deg, #f8fbff 0%, #f8fafc 100%);
+  border-radius: 14px;
   font-size: 18px;
-  line-height: 1.7;
-  color: #303133;
+  line-height: 1.8;
+  color: #1f2937;
   margin-bottom: 24px;
   white-space: pre-wrap;
 }
@@ -1416,11 +1652,12 @@ onUnmounted(() => {
 }
 
 .option-item {
-  padding: 14px 18px;
-  border: 2px solid #e4e7ed;
-  border-radius: 8px;
+  padding: 14px 16px;
+  border: 1px solid #dbe3ef;
+  border-radius: 14px;
   transition: all 0.2s ease;
   cursor: pointer;
+  background: #fff;
 }
 
 .option-item:hover {
@@ -1505,12 +1742,6 @@ onUnmounted(() => {
   flex: 1;
 }
 
-.action-buttons {
-  display: flex;
-  gap: 12px;
-  justify-content: flex-end;
-}
-
 .mobile-nav-mask {
   position: fixed;
   inset: 0;
@@ -1549,28 +1780,37 @@ onUnmounted(() => {
   .subject-grid {
     grid-template-columns: 1fr;
   }
+
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .header-actions,
+  .action-buttons {
+    width: 100%;
+  }
+
+  .action-buttons {
+    justify-content: stretch;
+  }
+
+  .action-buttons > * {
+    flex: 1 1 auto;
+  }
 }
 
 /* AI 讲解样式 */
 .explanation-box.ai {
-  margin-top: 20px;
-  padding: 16px;
-  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
-  border: 1px solid #93c5fd;
-  border-radius: 8px;
+  display: none;
 }
 
 .explanation-box.ai h3 {
-  margin: 0 0 12px;
-  font-size: 15px;
-  color: #1d4ed8;
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  display: none;
 }
 
 .explanation-box.ai h3::before {
-  content: '🤖';
+  content: '';
 }
 
 .explanation-content {
@@ -1595,5 +1835,45 @@ onUnmounted(() => {
 
 .explanation-content :deep(strong) {
   color: #dc2626;
+}
+
+.explanation-box {
+  margin-top: 20px;
+  padding: 16px;
+  background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+  border: 1px solid #fbbf24;
+  border-radius: 8px;
+}
+
+.explanation-box h3 {
+  margin: 0 0 12px;
+  font-size: 15px;
+  color: #b45309;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.explanation-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.explanation-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.explanation-textarea {
+  width: 100%;
+  min-height: 150px;
+  padding: 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 14px;
+  line-height: 1.6;
+  resize: vertical;
 }
 </style>

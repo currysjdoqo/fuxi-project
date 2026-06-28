@@ -267,6 +267,14 @@ export const generateReviewQuestions = async (count, subjectId = null) => {
   return response.data
 }
 
+export const updateQuestionExplanation = async (questionId, explanation) => {
+  const response = await api.post('/review/update-explanation', {
+    question_id: questionId,
+    explanation: explanation
+  })
+  return response.data
+}
+
 export const submitReviewAnswer = async (questionIdOrPayload, userAnswer) => {
   const payload = typeof questionIdOrPayload === 'object' && questionIdOrPayload !== null
     ? {

@@ -24,17 +24,9 @@
           <el-icon><Plus /></el-icon>
           <span>导入习题</span>
         </div>
-        <div class="nav-item" :class="{ active: $route.path === '/wrong' }" @click="$router.push('/wrong')">
-          <el-icon><CircleClose /></el-icon>
-          <span>错题本</span>
-        </div>
         <div class="nav-item" :class="{ active: $route.path === '/review' }" @click="$router.push('/review')">
           <el-icon><Refresh /></el-icon>
           <span>复习模式</span>
-        </div>
-        <div class="nav-item" :class="{ active: $route.path === '/important' }" @click="$router.push('/important')">
-          <el-icon><Star /></el-icon>
-          <span>重点题</span>
         </div>
         <div class="nav-item" :class="{ active: $route.path === '/trash' }" @click="$router.push('/trash')">
           <el-icon><Delete /></el-icon>

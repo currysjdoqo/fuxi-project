@@ -94,7 +94,7 @@ def generate_review_questions(
     rows = query.order_by(func.random()).limit(request.count).all()
     return [
         {
-            "question_id": question.id,
+            "id": question.id,
             "type": question.type,
             "content": question.content,
             "options": question.options,
@@ -232,3 +232,29 @@ def batch_submit_review(
 
     db.commit()
     return {"results": results}
+
+
+class UpdateExplanationRequest(BaseModel):
+    question_id: int
+    explanation: str
+
+
+@router.post("/review/update-explanation")
+def update_question_explanation(
+    request: UpdateExplanationRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    question = get_user_question(db, current_user.id, request.question_id)
+    if not question:
+        raise HTTPException(status_code=404, detail="题目不存在")
+
+    question.explanation = request.explanation
+    db.commit()
+    db.refresh(question)
+
+    return {
+        "success": True,
+        "question_id": question.id,
+        "explanation": question.explanation,
+    }

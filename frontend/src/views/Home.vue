@@ -414,14 +414,9 @@
                   </el-button>
                 </div>
 
-                <div v-if="showExplanation && currentQuestion.explanation" class="explanation-box">
+                <div v-if="showResult && showExplanation && currentQuestion.explanation" class="explanation-box">
                   <h3>答案解析</h3>
                   <p>{{ currentQuestion.explanation }}</p>
-                </div>
-
-                <div v-if="aiExplanation" class="explanation-box ai">
-                  <h3>AI 讲解</h3>
-                  <p>{{ aiExplanation }}</p>
                 </div>
 
                 <div class="actions">
@@ -455,10 +450,10 @@
                     >
                       批量提交 ({{ pendingSubmissions.length }})
                     </el-button>
-                    <el-button :icon="Document" :disabled="!currentQuestion.explanation" @click="showExplanation = !showExplanation">
+                    <el-button :icon="Document" :disabled="!showResult || !currentQuestion.explanation" @click="showExplanation = !showExplanation">
                       {{ showExplanation ? '隐藏解析' : '显示解析' }}
                     </el-button>
-                    <el-button :icon="ChatDotRound" :loading="aiLoading" @click="loadAiExplanation">
+                    <el-button v-if="showResult && !currentQuestion.explanation" :icon="ChatDotRound" :loading="aiLoading" @click="loadAiExplanation">
                       AI讲解
                     </el-button>
                     <el-button
@@ -589,12 +584,14 @@ import {
   getQuestions,
   getSubjects,
   submitAnswer as apiSubmitAnswer,
+  updateQuestionExplanation,
   updatePlanItem,
   updateQuestionImportant,
   updateQuestionAnswer,
   updateQuestionOptions,
   updateQuestionType
 } from '../api'
+import { getErrorMessage } from '../utils/errorHandler'
 
 const route = useRoute()
 const router = useRouter()
@@ -605,9 +602,7 @@ const navItems = [
   { path: '/', label: '练习模式', icon: Document },
   { path: '/plan', label: '学习计划', icon: List },
   { path: '/import', label: '导入习题', icon: Plus },
-  { path: '/wrong', label: '错题本', icon: CircleClose },
   { path: '/review', label: '复习模式', icon: Refresh },
-  { path: '/important', label: '重点题', icon: Star },
   { path: '/trash', label: '垃圾桶', icon: Delete },
   { path: '/settings', label: '设置', icon: Setting }
 ]
@@ -632,7 +627,6 @@ const typeUpdating = ref(false)
 const importantUpdating = ref(false)
 const loading = ref(false)
 const aiLoading = ref(false)
-const aiExplanation = ref('')
 const selectedQuestionType = ref('all')
 const questionListRef = ref(null)
 const answerEditValue = ref('')
@@ -917,7 +911,6 @@ const resetPracticeState = () => {
   batchSelectedIds.value = []
   loading.value = false
   aiLoading.value = false
-  aiExplanation.value = ''
   pendingSubmissions.value = []
 }
 
@@ -1143,7 +1136,6 @@ const updateCurrentQuestionType = async (type) => {
     selectedAnswer.value = ''
     showResult.value = false
     showExplanation.value = false
-    aiExplanation.value = ''
     ElMessage.success('题型已更新')
   } catch (error) {
     ElMessage.error(`修改题型失败：${error.response?.data?.detail || error.message}`)
@@ -1207,7 +1199,6 @@ const selectQuestion = (index) => {
   selectedAnswer.value = savedAnswer?.userAnswer || ''
   showResult.value = Boolean(savedAnswer)
   showExplanation.value = Boolean(savedAnswer)
-  aiExplanation.value = ''
   scrollCurrentQuestionIntoView('smooth')
 }
 
@@ -1463,16 +1454,24 @@ const batchDeleteSelected = async () => {
 }
 
 const loadAiExplanation = async () => {
-  if (!currentQuestion.value) return
+  if (!currentQuestion.value || !showResult.value || currentQuestion.value.explanation) return
   aiLoading.value = true
   try {
     const result = await getAiExplanation(currentQuestion.value.id)
-    aiExplanation.value = result.explanation
-    if (result.source === 'local') {
-      ElMessage.info('未配置 DeepSeek API Key，已显示本地解析')
+    if (result.success) {
+      const saveResult = await updateQuestionExplanation(currentQuestion.value.id, result.explanation)
+      if (saveResult.success) {
+        currentQuestion.value.explanation = result.explanation
+        showExplanation.value = true
+        ElMessage.success('AI解析已自动保存')
+      } else {
+        ElMessage.error('AI解析生成成功，但自动保存失败')
+      }
+    } else {
+      ElMessage.error(result.message || '获取讲解失败')
     }
   } catch (error) {
-    ElMessage.error(`AI讲解失败：${error.response?.data?.detail || error.message}`)
+    ElMessage.error(`AI讲解失败：${getErrorMessage(error, '获取讲解失败')}`)
   } finally {
     aiLoading.value = false
   }

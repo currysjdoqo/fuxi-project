@@ -1,11 +1,9 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import Home from '../views/Home.vue'
 import Import from '../views/Import.vue'
-import WrongList from '../views/WrongList.vue'
 import Review from '../views/Review.vue'
 import Settings from '../views/Settings.vue'
 import Trash from '../views/Trash.vue'
-import Important from '../views/Important.vue'
 import Plan from '../views/Plan.vue'
 import Register from '../views/Register.vue'
 import Login from '../views/Login.vue'
@@ -37,11 +35,6 @@ const routes = [
     component: Import
   },
   {
-    path: '/wrong',
-    name: 'WrongList',
-    component: WrongList
-  },
-  {
     path: '/review',
     name: 'Review',
     component: Review
@@ -55,11 +48,6 @@ const routes = [
     path: '/trash',
     name: 'Trash',
     component: Trash
-  },
-  {
-    path: '/important',
-    name: 'Important',
-    component: Important
   },
   {
     path: '/plan',
