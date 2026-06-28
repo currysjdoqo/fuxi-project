@@ -3,7 +3,7 @@ from typing import Any, Dict, List, Optional
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -13,7 +13,8 @@ from models import Question, Subject, User
 from routers.subjects import get_or_create_default_subject
 from utils.answer_normalizer import normalize_question_type, normalize_standard_answer
 from utils.file_extract import extract_text_from_file, extract_zip_file, save_uploaded_file
-from utils.parser import parse_exercise_text
+from utils.import_template import generate_excel_template
+from utils.parser import parse_exercise_text, parse_file
 
 router = APIRouter()
 UPLOAD_DIR = Path("uploads")
@@ -69,6 +70,20 @@ class MultiFileResponse(BaseModel):
     text_contents: str
     parsed_questions: List[ParsedQuestion]
     assets: List[SingleFileItem]
+
+
+class ParseFileResponse(BaseModel):
+    filename: str
+    parsed_questions: List[ParsedQuestion]
+    errors: List[str]
+
+
+class BatchParseResponse(BaseModel):
+    total_files: int
+    success_files: int
+    fail_files: int
+    all_questions: List[ParsedQuestion]
+    all_errors: List[str]
 
 
 class QuestionCreateRequest(BaseModel):
@@ -214,6 +229,83 @@ def download_uploaded_file(
 ):
     file_path = resolve_user_upload_file(saved_name, current_user)
     return FileResponse(path=file_path, filename=Path(name).name, media_type="application/octet-stream")
+
+
+@router.get("/import/template")
+def download_import_template():
+    template = generate_excel_template()
+    return StreamingResponse(
+        template,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=题目导入模板.xlsx"}
+    )
+
+
+@router.post("/import/parse-file", response_model=ParseFileResponse)
+async def parse_uploaded_file(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+):
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="文件名为空")
+    
+    file_bytes = await file.read()
+    if not file_bytes:
+        raise HTTPException(status_code=400, detail="上传文件为空")
+    
+    questions, errors = parse_file(file_bytes, file.filename)
+    
+    return {
+        "filename": file.filename,
+        "parsed_questions": [ParsedQuestion(**q) for q in questions],
+        "errors": errors,
+    }
+
+
+@router.post("/import/batch-parse", response_model=BatchParseResponse)
+async def batch_parse_files(
+    files: List[UploadFile] = File(...),
+    current_user: User = Depends(get_current_user),
+):
+    total_files = len(files)
+    success_files = 0
+    fail_files = 0
+    all_questions: List[ParsedQuestion] = []
+    all_errors: List[str] = []
+    
+    for file in files:
+        if not file.filename:
+            continue
+            
+        try:
+            file_bytes = await file.read()
+            if not file_bytes:
+                all_errors.append(f"文件 {file.filename} 为空")
+                fail_files += 1
+                continue
+                
+            questions, errors = parse_file(file_bytes, file.filename)
+            
+            if errors:
+                all_errors.extend([f"{file.filename}: {err}" for err in errors])
+            
+            if questions:
+                all_questions.extend([ParsedQuestion(**q) for q in questions])
+                success_files += 1
+            else:
+                fail_files += 1
+                
+        except Exception as e:
+            all_errors.append(f"文件 {file.filename} 解析失败: {str(e)}")
+            fail_files += 1
+    
+    return {
+        "total_files": total_files,
+        "success_files": success_files,
+        "fail_files": fail_files,
+        "all_questions": all_questions,
+        "all_errors": all_errors,
+    }
 
 
 def _process_single_file(filename: str, file_bytes: bytes, upload_dir: Path) -> SingleFileItem:

@@ -78,7 +78,7 @@
           />
           <div>
             <h1>导入练习集</h1>
-            <p>先选择科目，再粘贴题库文本或上传附件导入。</p>
+            <p>支持多种格式导入：Excel、CSV、JSON、TXT/MD 文本</p>
           </div>
           <el-button :icon="Back" @click="$router.push('/')">返回练习</el-button>
         </header>
@@ -97,41 +97,95 @@
             <el-button :icon="Plus" :loading="subjectCreating" @click="handleCreateSubject">创建</el-button>
           </div>
 
+          <div class="format-info">
+            <el-card class="format-card">
+              <template #header>
+                <div class="format-header">
+                  <el-icon><FileSpreadsheet /></el-icon>
+                  <span>推荐：使用 Excel 模板导入</span>
+                </div>
+              </template>
+              <p>点击下方按钮下载标准导入模板，按照模板格式填写题目后上传。</p>
+              <el-button type="primary" :icon="Download" :loading="downloading" @click="handleDownloadTemplate">
+                下载 Excel 模板
+              </el-button>
+            </el-card>
+            
+            <div class="format-options">
+              <div class="format-item">
+                <el-icon class="format-icon"><FileSpreadsheet /></el-icon>
+                <div>
+                  <strong>.xlsx / .xls</strong>
+                  <span>Excel 文件，推荐使用模板</span>
+                </div>
+              </div>
+              <div class="format-item">
+                <el-icon class="format-icon"><FileText /></el-icon>
+                <div>
+                  <strong>.csv</strong>
+                  <span>CSV 表格文件</span>
+                </div>
+              </div>
+              <div class="format-item">
+                <el-icon class="format-icon"><FileJson /></el-icon>
+                <div>
+                  <strong>.json</strong>
+                  <span>JSON 结构化数据</span>
+                </div>
+              </div>
+              <div class="format-item">
+                <el-icon class="format-icon"><FileWord /></el-icon>
+                <div>
+                  <strong>.txt / .md</strong>
+                  <span>纯文本或 Markdown</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <el-input
             v-model="exerciseText"
             type="textarea"
-            :rows="22"
+            :rows="15"
             resize="vertical"
-            placeholder="直接粘贴题库文本。TXT / MD 会走文本解析；PDF、Word、图片、压缩包等会作为附件题导入。"
+            placeholder="直接粘贴题库文本（支持自动解析），或上传文件导入..."
           />
 
           <div class="actions">
             <el-upload
               :show-file-list="false"
               :auto-upload="false"
-              :on-change="handleFileUpload"
-              accept=".txt,.md,.pdf,.docx,.png,.jpg,.jpeg,.bmp,.webp,.zip,.ppt,.pptx,.xls,.xlsx,.csv,.json,.xml,.mp3,.mp4,.avi,.mov,.mkv"
+              :on-change="handleMultiFileUpload"
+              :multiple="true"
+              accept=".txt,.md,.xlsx,.xls,.csv,.json"
             >
               <el-button :icon="UploadFilled" :loading="extracting">上传文件</el-button>
             </el-upload>
-            <el-upload
-              :file-list="uploadedFiles"
-              :on-change="handleUploadedFilesChange"
-              :on-remove="handleUploadedFilesChange"
-              :auto-upload="false"
-              :multiple="true"
-              accept=".txt,.md,.pdf,.docx,.png,.jpg,.jpeg,.bmp,.webp,.zip,.ppt,.pptx,.xls,.xlsx,.csv,.json,.xml,.mp3,.mp4,.avi,.mov,.mkv"
-            >
-              <el-button :icon="UploadFilled">选择文件</el-button>
-            </el-upload>
-            <el-button type="primary" :icon="Upload" :loading="extracting" :disabled="!uploadedFiles.length" @click="uploadSelectedFiles">处理文件</el-button>
             <el-button type="primary" :icon="Upload" :loading="loading" @click="handleParse">解析预览</el-button>
             <el-button type="success" :disabled="!parsedQuestions.length" :loading="saving" @click="saveParsedQuestions">保存预览题目</el-button>
             <el-button :icon="Delete" @click="clearText">清空</el-button>
           </div>
 
+          <div v-if="parseErrors.length > 0" class="error-list">
+            <el-alert
+              type="warning"
+              show-icon
+              :closable="false"
+              title="解析警告"
+            />
+            <ul>
+              <li v-for="(error, index) in parseErrors" :key="index">
+                <el-icon><Warning /></el-icon>
+                {{ error }}
+              </li>
+            </ul>
+          </div>
+
           <div v-if="parsedQuestions.length" class="preview-list">
-            <h2>解析预览</h2>
+            <div class="preview-header">
+              <h2>解析预览</h2>
+              <span class="preview-count">共 {{ parsedQuestions.length }} 题</span>
+            </div>
             <div v-for="(question, index) in parsedQuestions" :key="index" class="preview-item">
               <div class="preview-head">
                 <strong>第 {{ index + 1 }} 题</strong>
@@ -179,7 +233,7 @@
                 type="textarea"
                 :rows="2"
                 :disabled="question.type === 'code' && question.options._asset_url"
-                placeholder="解析"
+                placeholder="解析（选填）"
               />
             </div>
           </div>
@@ -201,9 +255,9 @@
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Back, Delete, Document, Plus, Refresh, Setting, Star, Upload, UploadFilled, CircleClose, Menu } from '@element-plus/icons-vue'
+import { Back, Delete, Document, Plus, Refresh, Setting, Star, Upload, UploadFilled, CircleClose, Menu, Download, FileSpreadsheet, FileText, FileJson, FileWord, Warning } from '@element-plus/icons-vue'
 import { useSidebarLayout } from '../composables/useSidebarLayout'
-import { createSubject, extractTextFromFile, extractMultipleFiles, getSubjects, importParsedQuestions, parseQuestions } from '../api'
+import { createSubject, downloadImportTemplate, getSubjects, importParsedQuestions, parseQuestions, parseUploadedFile } from '../api'
 
 const router = useRouter()
 const { sidebarCollapsed, mobileNavOpen, isMobileNav, toggleSidebar, toggleMobileNav, closeMobileNav } = useSidebarLayout()
@@ -214,17 +268,14 @@ const newSubjectName = ref('')
 const exerciseText = ref('')
 const loading = ref(false)
 const saving = ref(false)
+const downloading = ref(false)
 const subjectCreating = ref(false)
 const extracting = ref(false)
 const result = ref(null)
 const parsedQuestions = ref([])
-const uploadedFiles = ref([])
+const parseErrors = ref([])
 const textExts = new Set(['.txt', '.md'])
 const previewableAssetExts = new Set(['.pdf', '.png', '.jpg', '.jpeg', '.bmp', '.webp'])
-
-const handleUploadedFilesChange = (_file, fileList) => {
-  uploadedFiles.value = fileList
-}
 
 const handleLogout = () => {
   localStorage.removeItem('auth_token')
@@ -282,16 +333,37 @@ const handleCreateSubject = async () => {
   }
 }
 
+const handleDownloadTemplate = async () => {
+  downloading.value = true
+  try {
+    const blob = await downloadImportTemplate()
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = '题目导入模板.xlsx'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    window.URL.revokeObjectURL(url)
+    ElMessage.success('模板下载成功')
+  } catch (error) {
+    ElMessage.error(`下载模板失败：${error.response?.data?.detail || error.message}`)
+  } finally {
+    downloading.value = false
+  }
+}
+
 const handleParse = async () => {
   if (!subjectId.value) {
     ElMessage.warning('请选择科目')
     return
   }
   loading.value = true
+  parseErrors.value = []
   try {
     parsedQuestions.value = await parseQuestions(exerciseText.value)
     if (!parsedQuestions.value.length) {
-      ElMessage.warning('未能解析出题目')
+      ElMessage.warning('未能解析出题目，请检查格式')
     }
   } catch (error) {
     ElMessage.error(`解析失败：${error.response?.data?.detail || error.message}`)
@@ -300,102 +372,26 @@ const handleParse = async () => {
   }
 }
 
-const handleFileUpload = async (file) => {
-  // 单个文件上传，仅作为兼容保留
+const handleMultiFileUpload = async (file) => {
   if (!subjectId.value) {
     ElMessage.warning('请先选择科目')
     return
   }
   extracting.value = true
+  parseErrors.value = []
   try {
-    const ext = getFileExt(file.name)
-    if (textExts.has(ext)) {
-      const reader = new FileReader()
-      reader.onload = async () => {
-        try {
-          exerciseText.value = String(reader.result)
-          ElMessage.success('文件读取成功，请点击「解析预览」')
-        } catch (e) {
-          ElMessage.error(`读取文件失败：${e}`)
-        } finally {
-          extracting.value = false
-        }
-      }
-      reader.readAsText(file.raw)
-    } else {
-      const previewable = previewableAssetExts.has(ext)
-      const { asset_url, filename, asset_download_url } = await extractTextFromFile(file.raw)
-      parsedQuestions.value = [
-        {
-          type: 'code',
-          content: filename || file.name,
-          options: { _asset_url: asset_url, _asset_download_url: asset_download_url || asset_url, _asset_name: filename || file.name, _asset_previewable: previewable },
-          answer: '',
-          explanation: ''
-        }
-      ]
-      ElMessage.success('文件上传成功，已转为附件编程题，请点击「保存预览题目」')
-    }
-  } catch (error) {
-    ElMessage.error(`处理文件失败：${error.response?.data?.detail || error.message}`)
-  } finally {
-    extracting.value = false
-  }
-}
-
-const uploadSelectedFiles = async () => {
-  if (!subjectId.value) {
-    ElMessage.warning('请先选择科目')
-    return
-  }
-  if (!uploadedFiles.value || !uploadedFiles.value.length) {
-    ElMessage.warning('请先选择文件')
-    return
-  }
-  extracting.value = true
-  try {
-    const files = uploadedFiles.value.map(f => f.raw)
-    const result = await extractMultipleFiles(files)
-    let newQuestions = []
+    const result = await parseUploadedFile(file.raw)
     
-    // 处理文本文件的解析
+    if (result.errors && result.errors.length > 0) {
+      parseErrors.value = result.errors
+    }
+    
     if (result.parsed_questions && result.parsed_questions.length > 0) {
-      newQuestions = newQuestions.concat(result.parsed_questions)
-    }
-    
-    // 处理附件文件
-    if (result.assets && result.assets.length > 0) {
-      for (const asset of result.assets) {
-        const ext = '.' + asset.asset_saved_name.split('.').pop().toLowerCase()
-        const previewable = previewableAssetExts.has(ext)
-        newQuestions.push({
-          type: 'code',
-          content: asset.filename,
-          options: { 
-            _asset_url: asset.asset_url, 
-            _asset_download_url: asset.asset_download_url, 
-            _asset_name: asset.filename, 
-            _asset_previewable: previewable 
-          },
-          answer: '',
-          explanation: ''
-        })
-      }
-    }
-    
-    // 合并文本内容
-    if (result.text_contents) {
-      exerciseText.value = result.text_contents
-    }
-    
-    if (newQuestions.length > 0) {
-      parsedQuestions.value = newQuestions
-      ElMessage.success(`成功处理 ${result.processed_files} 个文件，解析出 ${newQuestions.length} 道题目`)
+      parsedQuestions.value = result.parsed_questions
+      ElMessage.success(`成功解析 ${result.parsed_questions.length} 道题目`)
     } else {
-      ElMessage.success(`成功处理 ${result.processed_files} 个文件`)
+      ElMessage.warning('未能从文件中解析出题目')
     }
-    // 清空文件列表
-    uploadedFiles.value = []
   } catch (error) {
     ElMessage.error(`处理文件失败：${error.response?.data?.detail || error.message}`)
   } finally {
@@ -436,6 +432,7 @@ const saveParsedQuestions = async () => {
     result.value = await importParsedQuestions(parsedQuestions.value, subjectId.value)
     ElMessage.success(`保存成功，新增加 ${result.value.inserted_count} 题`)
     parsedQuestions.value = []
+    parseErrors.value = []
     await loadSubjects()
   } catch (error) {
     ElMessage.error(`保存失败：${error.response?.data?.detail || error.message}`)
@@ -448,7 +445,7 @@ const clearText = () => {
   exerciseText.value = ''
   result.value = null
   parsedQuestions.value = []
-  uploadedFiles.value = []
+  parseErrors.value = []
 }
 
 onMounted(loadSubjects)
@@ -599,7 +596,7 @@ onMounted(loadSubjects)
 }
 
 .import-panel {
-  max-width: 980px;
+  max-width: 1000px;
   margin: 20px auto;
   padding: 20px;
   background: #fff;
@@ -614,11 +611,82 @@ onMounted(loadSubjects)
   margin-bottom: 16px;
 }
 
+.format-info {
+  margin-bottom: 16px;
+}
+
+.format-card {
+  margin-bottom: 16px;
+}
+
+.format-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.format-options {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+.format-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  background: #f8fafc;
+  border-radius: 8px;
+}
+
+.format-icon {
+  font-size: 24px;
+  color: #3b82f6;
+}
+
+.format-item div {
+  display: flex;
+  flex-direction: column;
+}
+
+.format-item strong {
+  font-size: 14px;
+  color: #334155;
+}
+
+.format-item span {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
 .actions {
   display: flex;
   gap: 10px;
   margin: 16px 0;
   flex-wrap: wrap;
+}
+
+.error-list {
+  background: #fffbeb;
+  border: 1px solid #fef3c7;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 16px;
+}
+
+.error-list ul {
+  margin: 0;
+  padding: 0 0 0 20px;
+}
+
+.error-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #d97706;
+  font-size: 13px;
+  margin-bottom: 4px;
 }
 
 .preview-list {
@@ -627,10 +695,21 @@ onMounted(loadSubjects)
   margin-top: 18px;
 }
 
-.preview-list h2 {
+.preview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.preview-header h2 {
   margin: 0;
   font-size: 18px;
   color: #303133;
+}
+
+.preview-count {
+  font-size: 14px;
+  color: #909399;
 }
 
 .preview-item {
@@ -661,5 +740,4 @@ onMounted(loadSubjects)
   display: flex;
   gap: 10px;
   align-items: center;
-}
-</style>
+}</style>

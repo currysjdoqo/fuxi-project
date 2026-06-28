@@ -99,6 +99,33 @@ export const importParsedQuestions = async (questions, subjectId) => {
   return response.data
 }
 
+export const downloadImportTemplate = async () => {
+  const response = await api.get('/import/template', {
+    responseType: 'blob'
+  })
+  return response.data
+}
+
+export const parseUploadedFile = async (file) => {
+  const formData = new FormData()
+  formData.append('file', file)
+  const response = await api.post('/import/parse-file', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  })
+  return response.data
+}
+
+export const batchParseFiles = async (files) => {
+  const formData = new FormData()
+  files.forEach(file => {
+    formData.append('files', file)
+  })
+  const response = await api.post('/import/batch-parse', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  })
+  return response.data
+}
+
 export const addQuestion = async (questionData) => {
   const response = await api.post('/questions', questionData)
   return response.data

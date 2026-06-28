@@ -1,5 +1,6 @@
 import re
-from typing import List
+from pathlib import Path
+from typing import List, Tuple
 
 
 QUESTION_NO_RE = re.compile(r"^\s*\d+[.．、]?\s*$")
@@ -210,3 +211,36 @@ def parse_exercise_text(text: str) -> List[dict]:
 
     _finish_question(current, questions)
     return questions
+
+
+def parse_file(file_bytes: bytes, filename: str) -> Tuple[List[dict], List[str]]:
+    """
+    根据文件扩展名自动选择解析方式
+    :param file_bytes: 文件字节内容
+    :param filename: 文件名（用于识别格式）
+    :return: (解析出的题目列表, 错误信息列表)
+    """
+    ext = Path(filename).suffix.lower()
+    
+    if ext in ['.xlsx', '.xls']:
+        from .import_template import parse_excel_to_questions
+        return parse_excel_to_questions(file_bytes)
+    
+    elif ext == '.csv':
+        from .import_template import parse_csv_to_questions
+        return parse_csv_to_questions(file_bytes)
+    
+    elif ext == '.json':
+        from .import_template import parse_json_to_questions
+        return parse_json_to_questions(file_bytes)
+    
+    elif ext in ['.txt', '.md']:
+        try:
+            text = file_bytes.decode('utf-8')
+        except UnicodeDecodeError:
+            text = file_bytes.decode('gbk')
+        questions = parse_exercise_text(text)
+        return questions, []
+    
+    else:
+        return [], [f"不支持的文件格式: {ext}"]
