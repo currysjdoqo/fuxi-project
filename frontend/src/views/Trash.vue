@@ -48,7 +48,9 @@
 
       <div class="user-section">
         <div class="user-info">
-          <div class="avatar">U</div>
+          <div class="avatar" :style="{ background: avatar ? `url(${avatar}) center/cover` : undefined }" @click="showProfileModal = true">
+            <template v-if="!avatar">{{ username.charAt(0).toUpperCase() }}</template>
+          </div>
           <div class="user-details">
             <span class="username">{{ username }}</span>
             <span class="logout-btn" @click="handleLogout">退出登录</span>
@@ -132,6 +134,11 @@
             </el-table-column>
           </el-table>
         </section>
+
+        <ProfileModal
+          v-model:visible="showProfileModal"
+          :username="username"
+        />
       </div>
     </div>
   </div>
@@ -143,6 +150,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { CircleClose, Delete, Document, List, Menu, Plus, Refresh, Setting, Star } from '@element-plus/icons-vue'
 import { useSidebarLayout } from '../composables/useSidebarLayout'
+import { useUser } from '../composables/useUser'
 import {
   getSubjects,
   getTrashQuestions,
@@ -150,10 +158,12 @@ import {
   permanentlyDeleteTrashQuestions,
   restoreTrashQuestions
 } from '../api'
+import ProfileModal from '../components/ProfileModal.vue'
 
 const router = useRouter()
 const { sidebarCollapsed, mobileNavOpen, isMobileNav, toggleSidebar, toggleMobileNav, closeMobileNav } = useSidebarLayout()
-const username = ref(localStorage.getItem('auth_username') || '用户')
+const { username, avatar } = useUser()
+const showProfileModal = ref(false)
 const subjects = ref([])
 const subjectId = ref(null)
 const trashList = ref([])
@@ -291,6 +301,7 @@ const permanentDelete = async (questionId) => {
 }
 
 onMounted(async () => {
+  await loadUserInfo()
   await loadSubjects()
   await loadTrash()
 })

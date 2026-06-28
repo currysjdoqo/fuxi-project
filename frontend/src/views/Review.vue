@@ -36,7 +36,9 @@
 
       <div class="user-section">
         <div class="user-info">
-          <div class="avatar">👤</div>
+          <div class="avatar" :style="{ background: avatar ? `url(${avatar}) center/cover` : undefined }" @click="showProfileModal = true">
+            <template v-if="!avatar">{{ username.charAt(0).toUpperCase() }}</template>
+          </div>
           <div class="user-details">
             <span class="username">{{ username }}</span>
             <span class="logout-btn" @click="handleLogout">退出登录</span>
@@ -320,6 +322,11 @@
         </main>
       </div>
     </div>
+
+    <ProfileModal
+      v-model:visible="showProfileModal"
+      :username="username"
+    />
   </div>
 </template>
 
@@ -327,6 +334,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import ProfileModal from '../components/ProfileModal.vue'
 import {
   Document,
   List,
@@ -345,13 +353,15 @@ import {
   ChatDotRound
 } from '@element-plus/icons-vue'
 import { useSidebarLayout } from '../composables/useSidebarLayout'
+import { useUser } from '../composables/useUser'
 import { getSubjects, getWrongQuestions, submitReviewAnswer, batchSubmitReviewAnswers, getAiExplanation } from '../api'
 
 const router = useRouter()
 const route = useRoute()
 const { sidebarCollapsed, mobileNavOpen, isMobileNav, toggleSidebar, toggleMobileNav, closeMobileNav } = useSidebarLayout()
+const { username, avatar } = useUser()
 
-const username = ref(localStorage.getItem('auth_username') || '用户')
+const showProfileModal = ref(false)
 const loading = ref(false)
 const subjects = ref([])
 const selectedSubject = ref(null)
@@ -869,7 +879,8 @@ const handleKeyDown = (event) => {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
+  await loadUserInfo()
   loadSubjects()
   window.addEventListener('keydown', handleKeyDown)
 })

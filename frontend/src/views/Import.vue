@@ -46,7 +46,9 @@
       </div>
       <div class="user-section">
         <div class="user-info">
-          <div class="avatar">👤</div>
+          <div class="avatar" :style="{ background: avatar ? `url(${avatar}) center/cover` : undefined }" @click="showProfileModal = true">
+            <template v-if="!avatar">{{ username.charAt(0).toUpperCase() }}</template>
+          </div>
           <div class="user-details">
             <span class="username">{{ username }}</span>
             <span class="logout-btn" @click="handleLogout">退出登录</span>
@@ -101,7 +103,7 @@
             <el-card class="format-card">
               <template #header>
                 <div class="format-header">
-                  <el-icon><FileSpreadsheet /></el-icon>
+                  <el-icon><List /></el-icon>
                   <span>推荐：使用 Excel 模板导入</span>
                 </div>
               </template>
@@ -113,28 +115,28 @@
             
             <div class="format-options">
               <div class="format-item">
-                <el-icon class="format-icon"><FileSpreadsheet /></el-icon>
+                <el-icon class="format-icon"><List /></el-icon>
                 <div>
                   <strong>.xlsx / .xls</strong>
                   <span>Excel 文件，推荐使用模板</span>
                 </div>
               </div>
               <div class="format-item">
-                <el-icon class="format-icon"><FileText /></el-icon>
+                <el-icon class="format-icon"><Document /></el-icon>
                 <div>
                   <strong>.csv</strong>
                   <span>CSV 表格文件</span>
                 </div>
               </div>
               <div class="format-item">
-                <el-icon class="format-icon"><FileJson /></el-icon>
+                <el-icon class="format-icon"><Folder /></el-icon>
                 <div>
                   <strong>.json</strong>
                   <span>JSON 结构化数据</span>
                 </div>
               </div>
               <div class="format-item">
-                <el-icon class="format-icon"><FileWord /></el-icon>
+                <el-icon class="format-icon"><Document /></el-icon>
                 <div>
                   <strong>.txt / .md</strong>
                   <span>纯文本或 Markdown</span>
@@ -246,6 +248,11 @@
             :title="'导入完成：解析 ' + result.parsed_count + ' 题，新增 ' + result.inserted_count + ' 题，跳过重复 ' + (result.parsed_count - result.inserted_count) + ' 题'"
           />
         </section>
+
+        <ProfileModal
+          v-model:visible="showProfileModal"
+          :username="username"
+        />
       </div>
     </div>
   </div>
@@ -255,13 +262,16 @@
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Back, Delete, Document, Plus, Refresh, Setting, Star, Upload, UploadFilled, CircleClose, Menu, Download, FileSpreadsheet, FileText, FileJson, FileWord, Warning } from '@element-plus/icons-vue'
+import { Back, Delete, Document, Plus, Refresh, Setting, Star, Upload, UploadFilled, CircleClose, Menu, Download, List, Folder, Warning } from '@element-plus/icons-vue'
 import { useSidebarLayout } from '../composables/useSidebarLayout'
+import { useUser } from '../composables/useUser'
 import { createSubject, downloadImportTemplate, getSubjects, importParsedQuestions, parseQuestions, parseUploadedFile } from '../api'
+import ProfileModal from '../components/ProfileModal.vue'
 
 const router = useRouter()
 const { sidebarCollapsed, mobileNavOpen, isMobileNav, toggleSidebar, toggleMobileNav, closeMobileNav } = useSidebarLayout()
-const username = ref(localStorage.getItem('auth_username') || '用户')
+const { username, avatar } = useUser()
+const showProfileModal = ref(false)
 const subjects = ref([])
 const subjectId = ref(null)
 const newSubjectName = ref('')
@@ -448,7 +458,10 @@ const clearText = () => {
   parseErrors.value = []
 }
 
-onMounted(loadSubjects)
+onMounted(async () => {
+  await loadUserInfo()
+  loadSubjects()
+})
 </script>
 
 <style scoped>

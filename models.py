@@ -12,6 +12,8 @@ class User(Base):
     username = Column(String, unique=True, index=True, nullable=False)
     password_hash = Column(String, nullable=False)
     token = Column(String, unique=True, index=True, nullable=True)
+    avatar = Column(String, nullable=True)
+    signature = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 

@@ -48,7 +48,9 @@
 
       <div class="user-section">
         <div class="user-info">
-          <div class="avatar">U</div>
+          <div class="avatar" :style="{ background: avatar ? `url(${avatar}) center/cover` : undefined }" @click="showProfileModal = true">
+            <template v-if="!avatar">{{ username.charAt(0).toUpperCase() }}</template>
+          </div>
           <div class="user-details">
             <span class="username">{{ username }}</span>
             <span class="logout-btn" @click="handleLogout">退出登录</span>
@@ -80,7 +82,7 @@
           />
           <div>
             <h1>设置</h1>
-            <p>配置 AI 讲解和数据管理。</p>
+            <p>配置用户资料和系统设置。</p>
           </div>
         </header>
 
@@ -119,20 +121,28 @@
         </main>
       </div>
     </div>
+
+    <ProfileModal
+      v-model:visible="showProfileModal"
+      :username="username"
+    />
   </div>
 </template>
 
 <script setup>
 import { h, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElInput, ElMessage, ElMessageBox } from 'element-plus'
+import { ElInput, ElInputNumber, ElMessage, ElMessageBox } from 'element-plus'
 import { Check, CircleClose, Delete, Document, List, Menu, Plus, Refresh, Setting, Star } from '@element-plus/icons-vue'
 import { useSidebarLayout } from '../composables/useSidebarLayout'
+import { useUser } from '../composables/useUser'
 import { clearAllData, getSettings, saveDeepSeekKey, saveWrongThreshold } from '../api'
+import ProfileModal from '../components/ProfileModal.vue'
 
 const router = useRouter()
 const { sidebarCollapsed, mobileNavOpen, isMobileNav, toggleSidebar, toggleMobileNav, closeMobileNav } = useSidebarLayout()
-const username = ref(localStorage.getItem('auth_username') || '用户')
+const { username, avatar } = useUser()
+const showProfileModal = ref(false)
 const settings = ref(null)
 const apiKey = ref('')
 const saving = ref(false)
@@ -154,6 +164,16 @@ const loadSettings = async () => {
     wrongThreshold.value = settings.value?.wrong_question_remove_threshold || 1
   } catch (error) {
     ElMessage.error(`加载设置失败：${error.response?.data?.detail || error.message}`)
+  }
+}
+
+const loadUserInfo = async () => {
+  try {
+    userInfo.value = await getCurrentUser()
+    username.value = userInfo.value.username || username.value
+    signature.value = userInfo.value.signature || ''
+  } catch (error) {
+    console.error('加载用户信息失败:', error)
   }
 }
 
@@ -242,7 +262,10 @@ const clearData = async () => {
   }
 }
 
-onMounted(loadSettings)
+onMounted(() => {
+  loadSettings()
+  loadUserInfo()
+})
 </script>
 
 <style scoped>
@@ -436,5 +459,89 @@ onMounted(loadSettings)
 
 .key-row .el-input {
   flex: 1;
+}
+
+.profile-card .profile-content {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+}
+
+.avatar-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.avatar-preview {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: #f0f0f0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 48px;
+  font-weight: 700;
+  color: #666;
+  border: 3px solid #e4e7ed;
+  transition: border-color 0.2s ease;
+}
+
+.avatar-preview:hover {
+  border-color: #3b82f6;
+}
+
+.avatar-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.avatar-upload-input {
+  display: none;
+}
+
+.avatar-hint {
+  font-size: 12px;
+  color: #909399;
+  margin: 0;
+}
+
+.profile-form {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.form-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.form-item label {
+  font-size: 14px;
+  font-weight: 500;
+  color: #606266;
+}
+
+.password-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+@media (max-width: 768px) {
+  .profile-card .profile-content {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  
+  .avatar-section {
+    align-items: flex-start;
+  }
 }
 </style>

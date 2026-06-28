@@ -43,6 +43,28 @@ export const getCurrentUser = async () => {
   return response.data
 }
 
+export const updateProfile = async (signature) => {
+  const response = await api.put('/auth/profile', { signature })
+  return response.data
+}
+
+export const uploadAvatar = async (file) => {
+  const formData = new FormData()
+  formData.append('file', file)
+  const response = await api.post('/auth/avatar', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  })
+  return response.data
+}
+
+export const changePassword = async (oldPassword, newPassword) => {
+  const response = await api.post('/auth/password', {
+    old_password: oldPassword,
+    new_password: newPassword
+  })
+  return response.data
+}
+
 export const getSubjects = async () => {
   const response = await api.get('/subjects')
   return response.data

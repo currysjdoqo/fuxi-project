@@ -36,7 +36,9 @@
 
       <div class="user-section">
         <div class="user-info">
-          <div class="avatar">👤</div>
+          <div class="avatar" :style="{ background: avatar ? `url(${avatar}) center/cover` : undefined }" @click="showProfileModal = true">
+            <template v-if="!avatar">{{ username.charAt(0).toUpperCase() }}</template>
+          </div>
           <div class="user-details">
             <span class="username">{{ username }}</span>
             <span class="logout-btn" @click="handleLogout">退出登录</span>
@@ -538,6 +540,12 @@
       :subject-name="selectedSubject?.name"
       :total-questions="allQuestions.length"
     />
+
+    <!-- 个人资料弹窗 -->
+    <ProfileModal
+      v-model:visible="showProfileModal"
+      :username="username"
+    />
   </div>
 </template>
 
@@ -568,6 +576,8 @@ import {
   StarFilled
 } from '@element-plus/icons-vue'
 import ExportDialog from '../components/ExportDialog.vue'
+import ProfileModal from '../components/ProfileModal.vue'
+import { useUser } from '../composables/useUser'
 import {
   batchDeleteQuestions,
   batchSubmitAnswers,
@@ -588,7 +598,9 @@ import {
 
 const route = useRoute()
 const router = useRouter()
-const username = ref(localStorage.getItem('auth_username') || '用户')
+const { username, avatar, loadUserInfo } = useUser()
+const showProfileModal = ref(false)
+const userAvatar = ref(null)
 const navItems = [
   { path: '/', label: '练习模式', icon: Document },
   { path: '/plan', label: '学习计划', icon: List },
@@ -1483,6 +1495,7 @@ onMounted(async () => {
   window.addEventListener('keydown', handlePracticeEnterKey)
   window.addEventListener('resize', initPlanFloatPosition)
   window.addEventListener('resize', syncLayoutMode)
+  await loadUserInfo()
   await loadSubjects()
   syncLayoutMode()
   initPlanFloatPosition()

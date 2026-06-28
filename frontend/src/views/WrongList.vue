@@ -46,7 +46,9 @@
       </div>
       <div class="user-section">
         <div class="user-info">
-          <div class="avatar">👤</div>
+          <div class="avatar" :style="{ background: avatar ? `url(${avatar}) center/cover` : undefined }" @click="showProfileModal = true">
+            <template v-if="!avatar">{{ username.charAt(0).toUpperCase() }}</template>
+          </div>
           <div class="user-details">
             <span class="username">{{ username }}</span>
             <span class="logout-btn" @click="handleLogout">退出登录</span>
@@ -148,6 +150,11 @@
             <el-button type="primary" @click="startReview">开始</el-button>
           </template>
         </el-dialog>
+
+        <ProfileModal
+          v-model:visible="showProfileModal"
+          :username="username"
+        />
       </div>
     </div>
   </div>
@@ -159,11 +166,14 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Delete, Edit, Refresh, Collection, Document, Plus, Star, Setting, CircleClose, Menu } from '@element-plus/icons-vue'
 import { useSidebarLayout } from '../composables/useSidebarLayout'
+import { useUser } from '../composables/useUser'
 import { removeWrongQuestion, getSubjects, getWrongQuestions } from '../api'
+import ProfileModal from '../components/ProfileModal.vue'
 
 const router = useRouter()
 const { sidebarCollapsed, mobileNavOpen, isMobileNav, toggleSidebar, toggleMobileNav, closeMobileNav } = useSidebarLayout()
-const username = ref(localStorage.getItem('auth_username') || '用户')
+const { username, avatar } = useUser()
+const showProfileModal = ref(false)
 const loading = ref(false)
 const subjects = ref([])
 const selectedSubjectId = ref(null)
@@ -258,7 +268,10 @@ const startReview = () => {
   })
 }
 
-onMounted(refreshAll)
+onMounted(async () => {
+  await loadUserInfo()
+  refreshAll()
+})
 </script>
 
 <style scoped>
