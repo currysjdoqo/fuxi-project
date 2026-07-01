@@ -93,6 +93,23 @@ export const parseQuestions = async (text) => {
   return response.data
 }
 
+export const parseQuestionsWithAi = async (text, sourceName = '') => {
+  const response = await api.post('/import/ai-parse', {
+    text,
+    source_name: sourceName
+  })
+  return response.data
+}
+
+export const parseUploadedFileWithAi = async (file) => {
+  const formData = new FormData()
+  formData.append('file', file)
+  const response = await api.post('/import/ai-parse-file', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  })
+  return response.data
+}
+
 export const extractTextFromFile = async (file) => {
   const formData = new FormData()
   formData.append('file', file)

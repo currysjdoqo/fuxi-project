@@ -12,13 +12,13 @@ from database import get_db
 from models import Question, Subject, User
 from routers.subjects import get_or_create_default_subject
 from utils.answer_normalizer import normalize_question_type, normalize_standard_answer
-from utils.file_extract import extract_text_from_file, extract_zip_file, save_uploaded_file
+from utils.ai_import import extract_text_for_ai_fallback, parse_questions_with_ai
+from utils.file_extract import TEXT_EXTRACT_EXTENSIONS, extract_text_from_file, extract_zip_file, save_uploaded_file
 from utils.import_template import generate_excel_template
 from utils.parser import parse_exercise_text, parse_file
 
 router = APIRouter()
 UPLOAD_DIR = Path("uploads")
-TEXT_EXTRACT_EXTENSIONS = {".txt", ".md"}
 
 
 class ParsedQuestion(BaseModel):
@@ -42,6 +42,11 @@ class ImportResponse(BaseModel):
 
 class ParseRequest(BaseModel):
     text: str
+
+
+class AiParseRequest(BaseModel):
+    text: str
+    source_name: Optional[str] = None
 
 
 class FileExtractResponse(BaseModel):
@@ -76,6 +81,13 @@ class ParseFileResponse(BaseModel):
     filename: str
     parsed_questions: List[ParsedQuestion]
     errors: List[str]
+    fallback_used: bool = False
+
+
+class AiParseResponse(BaseModel):
+    parsed_questions: List[ParsedQuestion]
+    errors: List[str]
+    fallback_used: bool = True
 
 
 class BatchParseResponse(BaseModel):
@@ -114,6 +126,13 @@ def build_private_asset_url(saved_name: str) -> str:
 
 def build_private_asset_download_url(saved_name: str, filename: str) -> str:
     return f"/api/uploads/download/{saved_name}?name={quote(filename)}"
+
+
+def build_download_headers(filename: str) -> Dict[str, str]:
+    encoded = quote(filename)
+    return {
+        "Content-Disposition": f"attachment; filename=import-template.xlsx; filename*=UTF-8''{encoded}"
+    }
 
 
 def resolve_subject_id(subject_id: Optional[int], db: Session, current_user: User) -> int:
@@ -177,6 +196,41 @@ def parse_questions(request: ParseRequest):
     return parse_exercise_text(request.text)
 
 
+@router.post("/import/ai-parse", response_model=AiParseResponse)
+async def ai_parse_questions(
+    request: AiParseRequest,
+    current_user: User = Depends(get_current_user),
+):
+    questions, errors = await parse_questions_with_ai(request.text, request.source_name)
+    return {
+        "parsed_questions": [ParsedQuestion(**q) for q in questions],
+        "errors": errors,
+        "fallback_used": True,
+    }
+
+
+@router.post("/import/ai-parse-file", response_model=ParseFileResponse)
+async def ai_parse_uploaded_file(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+):
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="文件名为空")
+
+    file_bytes = await file.read()
+    if not file_bytes:
+        raise HTTPException(status_code=400, detail="上传文件为空")
+
+    text = extract_text_for_ai_fallback(file.filename, file_bytes)
+    questions, errors = await parse_questions_with_ai(text, file.filename)
+    return {
+        "filename": file.filename,
+        "parsed_questions": [ParsedQuestion(**q) for q in questions],
+        "errors": errors,
+        "fallback_used": True,
+    }
+
+
 @router.post("/import/extract-file", response_model=FileExtractResponse)
 async def extract_file(
     file: UploadFile = File(...),
@@ -235,9 +289,9 @@ def download_uploaded_file(
 def download_import_template():
     template = generate_excel_template()
     return StreamingResponse(
-        template,
+        iter([template.getvalue()]),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": "attachment; filename=题目导入模板.xlsx"}
+        headers=build_download_headers("题目导入模板.xlsx"),
     )
 
 
@@ -254,11 +308,11 @@ async def parse_uploaded_file(
         raise HTTPException(status_code=400, detail="上传文件为空")
     
     questions, errors = parse_file(file_bytes, file.filename)
-    
     return {
         "filename": file.filename,
         "parsed_questions": [ParsedQuestion(**q) for q in questions],
         "errors": errors,
+        "fallback_used": False,
     }
 
 

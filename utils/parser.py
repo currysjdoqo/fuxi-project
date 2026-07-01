@@ -2,6 +2,8 @@ import re
 from pathlib import Path
 from typing import List, Tuple
 
+from .file_extract import TEXT_EXTRACT_EXTENSIONS, extract_text_from_file
+
 
 QUESTION_NO_RE = re.compile(r"^\s*\d+[.．、]?\s*$")
 OPTION_RE = re.compile(r"^\s*([A-Z])[.、)]\s*(.*)$", re.IGNORECASE)
@@ -234,11 +236,8 @@ def parse_file(file_bytes: bytes, filename: str) -> Tuple[List[dict], List[str]]
         from .import_template import parse_json_to_questions
         return parse_json_to_questions(file_bytes)
     
-    elif ext in ['.txt', '.md']:
-        try:
-            text = file_bytes.decode('utf-8')
-        except UnicodeDecodeError:
-            text = file_bytes.decode('gbk')
+    elif ext in TEXT_EXTRACT_EXTENSIONS:
+        text = extract_text_from_file(filename, file_bytes)
         questions = parse_exercise_text(text)
         return questions, []
     

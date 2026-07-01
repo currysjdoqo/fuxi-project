@@ -7,6 +7,25 @@ from uuid import uuid4
 
 from fastapi import HTTPException
 
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".webp", ".gif", ".tif", ".tiff"}
+TEXT_EXTRACT_EXTENSIONS = {".txt", ".md", ".pdf", ".docx", *IMAGE_EXTENSIONS}
+
+
+def _configure_tesseract_binary(pytesseract_module) -> None:
+    current_cmd = getattr(pytesseract_module.pytesseract, "tesseract_cmd", "") or ""
+    if current_cmd and Path(current_cmd).is_file():
+        return
+
+    candidates = [
+        Path("C:/Program Files/Tesseract-OCR/tesseract.exe"),
+        Path("C:/Program Files (x86)/Tesseract-OCR/tesseract.exe"),
+        Path.home() / "AppData/Local/Programs/Tesseract-OCR/tesseract.exe",
+    ]
+    for candidate in candidates:
+        if candidate.is_file():
+            pytesseract_module.pytesseract.tesseract_cmd = str(candidate)
+            return
+
 
 def _extract_from_txt(file_bytes: bytes) -> str:
     for encoding in ("utf-8", "gbk", "gb2312"):
@@ -14,7 +33,7 @@ def _extract_from_txt(file_bytes: bytes) -> str:
             return file_bytes.decode(encoding)
         except UnicodeDecodeError:
             continue
-    raise HTTPException(status_code=400, detail="文本文件编码无法识别，请使用 UTF-8/GBK")
+    raise HTTPException(status_code=400, detail="文本文件编码无法识别，请使用 UTF-8 或 GBK")
 
 
 def _extract_from_pdf(file_bytes: bytes) -> str:
@@ -43,15 +62,23 @@ def _extract_from_docx(file_bytes: bytes) -> str:
 def _extract_from_image(file_bytes: bytes) -> str:
     try:
         import pytesseract
-        from PIL import Image
+        from PIL import Image, ImageSequence
     except Exception as exc:  # pragma: no cover
-        raise HTTPException(status_code=500, detail="服务器未安装图片 OCR 依赖 Pillow/pytesseract") from exc
+        raise HTTPException(status_code=500, detail="服务器未安装图片 OCR 依赖 Pillow 或 pytesseract") from exc
 
     try:
+        _configure_tesseract_binary(pytesseract)
         image = Image.open(BytesIO(file_bytes))
+        if getattr(image, "is_animated", False):
+            image = next(ImageSequence.Iterator(image))
+        if image.mode not in {"L", "RGB"}:
+            image = image.convert("RGB")
         text = pytesseract.image_to_string(image, lang="chi_sim+eng")
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"图片 OCR 失败：{exc}") from exc
+        raise HTTPException(
+            status_code=400,
+            detail=f"图片 OCR 失败: {exc}. 请确认已安装 Tesseract OCR，并包含 chi_sim 和 eng 语言包。",
+        ) from exc
     return text.strip()
 
 
@@ -63,10 +90,13 @@ def extract_text_from_file(filename: str, file_bytes: bytes) -> str:
         text = _extract_from_pdf(file_bytes)
     elif suffix == ".docx":
         text = _extract_from_docx(file_bytes)
-    elif suffix in {".png", ".jpg", ".jpeg", ".bmp", ".webp"}:
+    elif suffix in IMAGE_EXTENSIONS:
         text = _extract_from_image(file_bytes)
     else:
-        raise HTTPException(status_code=400, detail="仅支持 txt/md/pdf/docx/png/jpg/jpeg/bmp/webp 文件")
+        raise HTTPException(
+            status_code=400,
+            detail="仅支持 txt/md/pdf/docx/png/jpg/jpeg/bmp/webp/gif/tif/tiff 文件",
+        )
 
     if not text.strip():
         raise HTTPException(status_code=400, detail="文件解析成功，但未提取到文本内容")
@@ -83,25 +113,26 @@ def save_uploaded_file(filename: str, file_bytes: bytes, upload_dir: Path) -> tu
 
 
 def extract_zip_file(file_bytes: bytes, upload_dir: Path) -> list[dict]:
-    """解压zip文件并返回内部文件列表，每个文件包含filename、file_bytes、suffix"""
     result = []
     try:
-        with zipfile.ZipFile(BytesIO(file_bytes), 'r') as zf:
+        with zipfile.ZipFile(BytesIO(file_bytes), "r") as zf:
             for member in zf.infolist():
                 if member.is_dir():
-                    continue  # 跳过目录
-                if member.filename.startswith('__MACOSX') or member.filename.startswith('.'):
-                    continue  # 跳过系统文件
+                    continue
+                if member.filename.startswith("__MACOSX") or member.filename.startswith("."):
+                    continue
                 try:
                     extracted_bytes = zf.read(member)
                     suffix = Path(member.filename).suffix.lower()
-                    result.append({
-                        'filename': Path(member.filename).name,
-                        'file_bytes': extracted_bytes,
-                        'suffix': suffix
-                    })
+                    result.append(
+                        {
+                            "filename": Path(member.filename).name,
+                            "file_bytes": extracted_bytes,
+                            "suffix": suffix,
+                        }
+                    )
                 except Exception:
                     continue
     except zipfile.BadZipFile:
-        raise HTTPException(status_code=400, detail="无效的zip文件")
+        raise HTTPException(status_code=400, detail="无效的 zip 文件")
     return result

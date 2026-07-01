@@ -72,7 +72,7 @@
           />
           <div>
             <h1>导入练习集</h1>
-            <p>支持多种格式导入：Excel、CSV、JSON、TXT/MD 文本</p>
+            <p>支持多种格式导入：Excel、CSV、JSON、TXT/MD、PDF、DOCX 以及图片 OCR</p>
           </div>
           <el-button :icon="Back" @click="$router.push('/')">返回练习</el-button>
         </header>
@@ -134,6 +134,13 @@
                   <span>纯文本或 Markdown</span>
                 </div>
               </div>
+              <div class="format-item">
+                <el-icon class="format-icon"><Folder /></el-icon>
+                <div>
+                  <strong>.pdf / .docx / 图片</strong>
+                  <span>自动提取文本，图片会尝试 OCR</span>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -151,11 +158,12 @@
               :auto-upload="false"
               :on-change="handleMultiFileUpload"
               :multiple="true"
-              accept=".txt,.md,.xlsx,.xls,.csv,.json"
+              accept=".txt,.md,.xlsx,.xls,.csv,.json,.pdf,.docx,.png,.jpg,.jpeg,.bmp,.webp,.gif,.tif,.tiff"
             >
               <el-button :icon="UploadFilled" :loading="extracting">上传文件</el-button>
             </el-upload>
             <el-button type="primary" :icon="Upload" :loading="loading" @click="handleParse">解析预览</el-button>
+            <el-button :loading="aiParsing" @click="handleAiParse">AI 兜底解析</el-button>
             <el-button type="success" :disabled="!parsedQuestions.length" :loading="saving" @click="saveParsedQuestions">保存预览题目</el-button>
             <el-button :icon="Delete" @click="clearText">清空</el-button>
           </div>
@@ -257,7 +265,7 @@ import { ElMessage } from 'element-plus'
 import { Back, Delete, Document, Plus, Refresh, Setting, Star, Upload, UploadFilled, CircleClose, Menu, Download, List, Folder, Warning } from '@element-plus/icons-vue'
 import { useSidebarLayout } from '../composables/useSidebarLayout'
 import { useUser } from '../composables/useUser'
-import { createSubject, downloadImportTemplate, getSubjects, importParsedQuestions, parseQuestions, parseUploadedFile } from '../api'
+import { createSubject, downloadImportTemplate, getSubjects, importParsedQuestions, parseQuestions, parseQuestionsWithAi, parseUploadedFile, parseUploadedFileWithAi } from '../api'
 import ProfileModal from '../components/ProfileModal.vue'
 
 const router = useRouter()
@@ -273,11 +281,34 @@ const saving = ref(false)
 const downloading = ref(false)
 const subjectCreating = ref(false)
 const extracting = ref(false)
+const aiParsing = ref(false)
 const result = ref(null)
 const parsedQuestions = ref([])
 const parseErrors = ref([])
 const textExts = new Set(['.txt', '.md'])
-const previewableAssetExts = new Set(['.pdf', '.png', '.jpg', '.jpeg', '.bmp', '.webp'])
+const imageExts = new Set(['.png', '.jpg', '.jpeg', '.bmp', '.webp', '.gif', '.tif', '.tiff'])
+const previewableAssetExts = new Set(['.pdf', ...imageExts])
+const lastUploadedFile = ref(null)
+
+const applyParsedQuestions = (questions = []) => {
+  parsedQuestions.value = questions.map(question => ensureMultiChoiceOptions({
+    ...question,
+    options: { ...(question.options || {}) }
+  }))
+}
+
+const tryAiFallback = async (text, sourceName = '文本导入') => {
+  const aiResult = await parseQuestionsWithAi(text, sourceName)
+  if (aiResult.errors?.length) {
+    parseErrors.value = [...parseErrors.value, ...aiResult.errors]
+  }
+  if (aiResult.parsed_questions?.length) {
+    applyParsedQuestions(aiResult.parsed_questions)
+    ElMessage.success(`规则解析失败，已通过 AI 兜底解析 ${aiResult.parsed_questions.length} 道题目`)
+    return true
+  }
+  return false
+}
 
 const handleLogout = () => {
   localStorage.removeItem('auth_token')
@@ -290,6 +321,17 @@ const handleLogout = () => {
 const getFileExt = (name = '') => {
   const index = name.lastIndexOf('.')
   return index >= 0 ? name.slice(index).toLowerCase() : ''
+}
+
+const buildUploadFailureMessage = (fileName, detail) => {
+  const ext = getFileExt(fileName)
+  if (!imageExts.has(ext)) {
+    return `处理文件失败：${detail}`
+  }
+  if (String(detail || '').includes('Tesseract OCR')) {
+    return `图片上传成功，但 OCR 解析失败：${detail}`
+  }
+  return `图片处理失败：${detail}`
 }
 
 const ensureMultiChoiceOptions = (question) => {
@@ -363,10 +405,13 @@ const handleParse = async () => {
   loading.value = true
   parseErrors.value = []
   try {
-    parsedQuestions.value = await parseQuestions(exerciseText.value)
-    if (!parsedQuestions.value.length) {
-      ElMessage.warning('未能解析出题目，请检查格式')
+    const questions = await parseQuestions(exerciseText.value)
+    if (questions.length) {
+      applyParsedQuestions(questions)
+      return
     }
+    parsedQuestions.value = []
+    ElMessage.warning('未能解析出题目，可点击“AI 兜底解析”继续尝试')
   } catch (error) {
     ElMessage.error(`解析失败：${error.response?.data?.detail || error.message}`)
   } finally {
@@ -381,6 +426,7 @@ const handleMultiFileUpload = async (file) => {
   }
   extracting.value = true
   parseErrors.value = []
+  lastUploadedFile.value = file.raw
   try {
     const result = await parseUploadedFile(file.raw)
     
@@ -389,15 +435,58 @@ const handleMultiFileUpload = async (file) => {
     }
     
     if (result.parsed_questions && result.parsed_questions.length > 0) {
-      parsedQuestions.value = result.parsed_questions
+      applyParsedQuestions(result.parsed_questions)
       ElMessage.success(`成功解析 ${result.parsed_questions.length} 道题目`)
     } else {
-      ElMessage.warning('未能从文件中解析出题目')
+      ElMessage.warning('未能从文件中解析出题目，可点击“AI 兜底解析”继续尝试')
     }
   } catch (error) {
-    ElMessage.error(`处理文件失败：${error.response?.data?.detail || error.message}`)
+    const detail = error.response?.data?.detail || error.message
+    ElMessage.error(buildUploadFailureMessage(file.raw?.name || file.name, detail))
   } finally {
     extracting.value = false
+  }
+}
+
+const handleAiParse = async () => {
+  if (!subjectId.value) {
+    ElMessage.warning('请选择科目')
+    return
+  }
+
+  const text = exerciseText.value.trim()
+  if (!text && !lastUploadedFile.value) {
+    ElMessage.warning('请先粘贴文本或上传文件')
+    return
+  }
+
+  aiParsing.value = true
+  parseErrors.value = []
+  try {
+    if (text) {
+      const aiSucceeded = await tryAiFallback(text, '文本粘贴导入')
+      if (!aiSucceeded) {
+        parsedQuestions.value = []
+        ElMessage.warning('AI 未能解析出题目，请调整内容后重试')
+      }
+      return
+    }
+
+    const result = await parseUploadedFileWithAi(lastUploadedFile.value)
+    if (result.errors?.length) {
+      parseErrors.value = result.errors
+    }
+    if (result.parsed_questions?.length) {
+      applyParsedQuestions(result.parsed_questions)
+      ElMessage.success(`AI 兜底解析成功，共 ${result.parsed_questions.length} 道题目`)
+    } else {
+      parsedQuestions.value = []
+      ElMessage.warning('AI 未能解析出题目，请更换文件或检查内容')
+    }
+  } catch (error) {
+    ElMessage.error(`AI 解析失败：${error.response?.data?.detail || error.message}`)
+  } finally {
+    aiParsing.value = false
   }
 }
 
@@ -445,6 +534,7 @@ const saveParsedQuestions = async () => {
 
 const clearText = () => {
   exerciseText.value = ''
+  lastUploadedFile.value = null
   result.value = null
   parsedQuestions.value = []
   parseErrors.value = []
@@ -632,7 +722,7 @@ onMounted(async () => {
 
 .format-options {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 12px;
 }
 
