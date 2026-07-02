@@ -7,7 +7,9 @@ import Trash from '../views/Trash.vue'
 import Plan from '../views/Plan.vue'
 import Register from '../views/Register.vue'
 import Login from '../views/Login.vue'
+import Friends from '../views/Friends.vue'
 import { getCurrentUser } from '../api'
+import { bootstrapLegacyAuth, clearAuthSession, getAuthToken, isAuthSessionReady } from '../utils/authStorage'
 
 const routes = [
   {
@@ -53,6 +55,11 @@ const routes = [
     path: '/plan',
     name: 'Plan',
     component: Plan
+  },
+  {
+    path: '/friends',
+    name: 'Friends',
+    component: Friends
   }
 ]
 
@@ -63,13 +70,6 @@ const router = createRouter({
 
 let authCheckedToken = null
 let authCheckedOk = false
-const LOGIN_SESSION_KEY = 'auth_session_ok'
-
-const clearLocalAuth = () => {
-  localStorage.removeItem('auth_token')
-  localStorage.removeItem('auth_username')
-  sessionStorage.removeItem(LOGIN_SESSION_KEY)
-}
 
 const verifyToken = async (token) => {
   if (!token) return false
@@ -83,14 +83,15 @@ const verifyToken = async (token) => {
   } catch {
     authCheckedToken = null
     authCheckedOk = false
-    clearLocalAuth()
+    clearAuthSession()
     return false
   }
 }
 
 router.beforeEach(async (to) => {
-  const token = localStorage.getItem('auth_token')
-  const sessionOk = sessionStorage.getItem(LOGIN_SESSION_KEY) === '1'
+  bootstrapLegacyAuth()
+  const token = getAuthToken()
+  const sessionOk = isAuthSessionReady()
 
   if (to.path.startsWith('/auth')) {
     return true

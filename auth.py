@@ -20,6 +20,13 @@ def issue_token() -> str:
     return secrets.token_urlsafe(32)
 
 
+def get_user_by_token(token: str, db: Session) -> User | None:
+    normalized = token.strip()
+    if not normalized:
+        return None
+    return db.query(User).filter(User.token == normalized).first()
+
+
 def get_current_user(
     authorization: str | None = Header(default=None),
     db: Session = Depends(get_db),
@@ -31,7 +38,7 @@ def get_current_user(
     if not token:
         raise HTTPException(status_code=401, detail="未登录或登录已过期")
 
-    user = db.query(User).filter(User.token == token).first()
+    user = get_user_by_token(token, db)
     if not user:
         raise HTTPException(status_code=401, detail="未登录或登录已过期")
 

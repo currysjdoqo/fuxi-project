@@ -14,6 +14,7 @@ class User(Base):
     token = Column(String, unique=True, index=True, nullable=True)
     avatar = Column(String, nullable=True)
     signature = Column(String, nullable=True)
+    user_code = Column(String(10), unique=True, index=True, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -78,3 +79,39 @@ class PlanItem(Base):
     completed = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class Friendship(Base):
+    __tablename__ = "friendships"
+    __table_args__ = (
+        UniqueConstraint("user_id", "friend_id", name="uq_friendship"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True)
+    friend_id = Column(Integer, ForeignKey("users.id"), index=True)
+    status = Column(String, default="pending")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class Message(Base):
+    __tablename__ = "messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    sender_id = Column(Integer, ForeignKey("users.id"), index=True)
+    receiver_id = Column(Integer, ForeignKey("users.id"), index=True)
+    content = Column(String, nullable=False)
+    is_read = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ShareRecord(Base):
+    __tablename__ = "share_records"
+
+    id = Column(Integer, primary_key=True, index=True)
+    subject_id = Column(Integer, ForeignKey("subjects.id"), index=True)
+    from_user_id = Column(Integer, ForeignKey("users.id"), index=True)
+    to_user_id = Column(Integer, ForeignKey("users.id"), index=True)
+    accepted = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)

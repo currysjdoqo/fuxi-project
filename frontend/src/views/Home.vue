@@ -568,11 +568,13 @@ import {
   Select,
   Setting,
   Star,
-  StarFilled
+  StarFilled,
+  User
 } from '@element-plus/icons-vue'
 import ExportDialog from '../components/ExportDialog.vue'
 import ProfileModal from '../components/ProfileModal.vue'
 import { useUser } from '../composables/useUser'
+import { clearAuthSession } from '../utils/authStorage'
 import {
   batchDeleteQuestions,
   batchSubmitAnswers,
@@ -600,6 +602,7 @@ const showProfileModal = ref(false)
 const userAvatar = ref(null)
 const navItems = [
   { path: '/', label: '练习模式', icon: Document },
+  { path: '/friends', label: '好友互动', icon: User },
   { path: '/plan', label: '学习计划', icon: List },
   { path: '/import', label: '导入习题', icon: Plus },
   { path: '/review', label: '复习模式', icon: Refresh },
@@ -661,9 +664,7 @@ const goToPath = (path) => {
 }
 
 const handleLogout = () => {
-  localStorage.removeItem('auth_token')
-  localStorage.removeItem('auth_username')
-  sessionStorage.removeItem('auth_session_ok')
+  clearAuthSession()
   router.push('/auth/login')
   ElMessage.success('已退出登录')
 }

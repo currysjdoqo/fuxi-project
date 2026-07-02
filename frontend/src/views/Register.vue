@@ -79,7 +79,7 @@
         </el-form>
 
         <div class="divider">
-          <span>已经有账号</span>
+          <span>已经有账号？</span>
         </div>
 
         <button class="switch-link" type="button" @click="router.push('/auth/login')">
@@ -96,6 +96,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Lock, User } from '@element-plus/icons-vue'
 import { register } from '../api'
+import { clearLegacySharedAuth, saveAuthSession } from '../utils/authStorage'
 
 const router = useRouter()
 const formRef = ref(null)
@@ -138,9 +139,13 @@ const handleRegister = async () => {
   loading.value = true
   try {
     const result = await register(form.username.trim(), form.password.trim())
-    localStorage.setItem('auth_token', result.token)
-    localStorage.setItem('auth_username', result.username)
-    sessionStorage.setItem('auth_session_ok', '1')
+    saveAuthSession({
+      token: result.token,
+      username: result.username,
+      userId: result.user_id,
+      userCode: result.user_code || ''
+    })
+    clearLegacySharedAuth()
     ElMessage.success('注册成功')
     router.replace('/import')
   } catch (error) {
@@ -179,8 +184,7 @@ const handleRegister = async () => {
   inset: 0;
   opacity: 0.18;
   pointer-events: none;
-  background-image:
-    radial-gradient(circle at 1px 1px, rgba(32, 49, 39, 0.08) 1px, transparent 0);
+  background-image: radial-gradient(circle at 1px 1px, rgba(32, 49, 39, 0.08) 1px, transparent 0);
   background-size: 14px 14px;
 }
 

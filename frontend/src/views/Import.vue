@@ -265,6 +265,7 @@ import { ElMessage } from 'element-plus'
 import { Back, Delete, Document, Plus, Refresh, Setting, Star, Upload, UploadFilled, CircleClose, Menu, Download, List, Folder, Warning } from '@element-plus/icons-vue'
 import { useSidebarLayout } from '../composables/useSidebarLayout'
 import { useUser } from '../composables/useUser'
+import { clearAuthSession } from '../utils/authStorage'
 import { createSubject, downloadImportTemplate, getSubjects, importParsedQuestions, parseQuestions, parseQuestionsWithAi, parseUploadedFile, parseUploadedFileWithAi } from '../api'
 import ProfileModal from '../components/ProfileModal.vue'
 
@@ -311,9 +312,7 @@ const tryAiFallback = async (text, sourceName = '文本导入') => {
 }
 
 const handleLogout = () => {
-  localStorage.removeItem('auth_token')
-  localStorage.removeItem('auth_username')
-  sessionStorage.removeItem('auth_session_ok')
+  clearAuthSession()
   router.push('/auth/login')
   ElMessage.success('已退出登录')
 }

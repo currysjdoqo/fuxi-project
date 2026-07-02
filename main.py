@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from database import Base, engine
 from routers.auth import router as auth_router
 from routers.export import router as export_router
 from routers.ai import router as ai_router
@@ -15,12 +16,18 @@ from routers.settings import router as settings_router
 from routers.subjects import router as subjects_router
 from routers.trash import router as trash_router
 from routers.wrong import router as wrong_router
+from routers.friends import router as friends_router
+from routers.messages import router as messages_router
+from routers.realtime import router as realtime_router
+from routers.share import router as share_router
 
 app = FastAPI(
     title="习题库管理系统",
     description="FastAPI + SQLAlchemy + SQLite",
     version="1.0.0",
 )
+
+Base.metadata.create_all(bind=engine)
 
 app.add_middleware(
     CORSMiddleware,
@@ -41,6 +48,10 @@ app.include_router(trash_router, prefix="/api")
 app.include_router(plan_router, prefix="/api")
 app.include_router(export_router, prefix="/api")
 app.include_router(ai_router, prefix="/api")
+app.include_router(friends_router, prefix="/api")
+app.include_router(messages_router, prefix="/api")
+app.include_router(share_router, prefix="/api")
+app.include_router(realtime_router)
 
 Path("uploads").mkdir(exist_ok=True)
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")

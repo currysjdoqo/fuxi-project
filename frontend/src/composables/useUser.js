@@ -1,12 +1,13 @@
-import { ref, computed, watch } from 'vue'
+import { computed, ref } from 'vue'
 import { getCurrentUser } from '../api'
+import { getAuthUserCode, getAuthUsername, updateAuthUserInfo } from '../utils/authStorage'
 
 const userInfo = ref(null)
 const loading = ref(false)
 
 export const useUser = () => {
   const username = computed(() => {
-    return userInfo.value?.username || localStorage.getItem('auth_username') || '用户'
+    return userInfo.value?.username || getAuthUsername() || '用户'
   })
 
   const avatar = computed(() => {
@@ -17,14 +18,20 @@ export const useUser = () => {
     return userInfo.value?.signature || ''
   })
 
+  const userCode = computed(() => {
+    return userInfo.value?.user_code || getAuthUserCode() || ''
+  })
+
   const loadUserInfo = async () => {
     if (loading.value) return
     loading.value = true
     try {
       userInfo.value = await getCurrentUser()
-      if (userInfo.value?.username) {
-        localStorage.setItem('auth_username', userInfo.value.username)
-      }
+      updateAuthUserInfo({
+        username: userInfo.value?.username,
+        userId: userInfo.value?.user_id,
+        userCode: userInfo.value?.user_code,
+      })
     } catch (error) {
       console.error('加载用户信息失败:', error)
     } finally {
@@ -53,10 +60,11 @@ export const useUser = () => {
     username,
     avatar,
     signature,
+    userCode,
     loading,
     loadUserInfo,
     updateAvatar,
     updateSignature,
-    resetUser
+    resetUser,
   }
 }

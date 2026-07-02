@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { clearAuthSession, getAuthToken } from '../utils/authStorage'
 
 const api = axios.create({
   baseURL: '/api',
@@ -6,7 +7,7 @@ const api = axios.create({
 })
 
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('auth_token')
+  const token = getAuthToken()
   if (token) {
     config.headers = config.headers || {}
     config.headers.Authorization = `Bearer ${token}`
@@ -18,8 +19,7 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error?.response?.status === 401) {
-      localStorage.removeItem('auth_token')
-      localStorage.removeItem('auth_username')
+      clearAuthSession()
       if (window.location.pathname !== '/auth') {
         window.location.href = '/auth'
       }
@@ -424,6 +424,84 @@ export const exportQuestions = async (subjectId, options = {}) => {
     params,
     responseType: 'blob'
   })
+  return response.data
+}
+
+// 好友相关API
+export const sendFriendRequest = async (userCode) => {
+  const response = await api.post('/friends/request', { user_code: userCode })
+  return response.data
+}
+
+export const acceptFriendRequest = async (friendId) => {
+  const response = await api.post('/friends/accept', { friend_id: friendId })
+  return response.data
+}
+
+export const rejectFriendRequest = async (friendId) => {
+  const response = await api.post('/friends/reject', { friend_id: friendId })
+  return response.data
+}
+
+export const getFriends = async () => {
+  const response = await api.get('/friends/list')
+  return response.data
+}
+
+export const getPendingRequests = async () => {
+  const response = await api.get('/friends/pending')
+  return response.data
+}
+
+export const removeFriend = async (friendId) => {
+  const response = await api.delete(`/friends/${friendId}`)
+  return response.data
+}
+
+export const searchUser = async (code) => {
+  const response = await api.get('/users/search', { params: { code } })
+  return response.data
+}
+
+// 消息相关API
+export const sendMessage = async (receiverId, content) => {
+  const response = await api.post('/messages/send', { receiver_id: receiverId, content })
+  return response.data
+}
+
+export const getMessages = async (friendId) => {
+  const response = await api.get(`/messages/${friendId}`)
+  return response.data
+}
+
+export const markMessagesRead = async (friendId) => {
+  const response = await api.post(`/messages/read/${friendId}`)
+  return response.data
+}
+
+export const getUnreadCount = async () => {
+  const response = await api.get('/messages/unread-count')
+  return response.data
+}
+
+// 分享相关API
+export const shareSubject = async (subjectId, friendId) => {
+  const response = await api.post('/share/subject', { subject_id: subjectId, friend_id: friendId })
+  return response.data
+}
+
+export const getShareList = async () => {
+  const response = await api.get('/share/list')
+  return response.data
+}
+
+export const acceptShare = async (shareId) => {
+  const response = await api.post(`/share/accept/${shareId}`)
+  return response.data
+}
+
+export const rejectShare = async (shareId) => {
+  const response = await api.post(`/share/reject/${shareId}`)
   return response.data
 }
 

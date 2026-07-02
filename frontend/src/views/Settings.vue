@@ -130,6 +130,7 @@ import { useSidebarLayout } from '../composables/useSidebarLayout'
 import { useUser } from '../composables/useUser'
 import { clearAllData, getSettings, saveDeepSeekKey, saveWrongThreshold } from '../api'
 import ProfileModal from '../components/ProfileModal.vue'
+import { clearAuthSession } from '../utils/authStorage'
 
 const router = useRouter()
 const { sidebarCollapsed, mobileNavOpen, isMobileNav, toggleSidebar, toggleMobileNav, closeMobileNav } = useSidebarLayout()
@@ -143,9 +144,7 @@ const wrongThreshold = ref(1)
 const savingThreshold = ref(false)
 
 const handleLogout = () => {
-  localStorage.removeItem('auth_token')
-  localStorage.removeItem('auth_username')
-  sessionStorage.removeItem('auth_session_ok')
+  clearAuthSession()
   router.push('/auth/login')
   ElMessage.success('已退出登录')
 }

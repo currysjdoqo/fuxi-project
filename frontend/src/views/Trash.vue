@@ -143,6 +143,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { CircleClose, Delete, Document, List, Menu, Plus, Refresh, Setting, Star } from '@element-plus/icons-vue'
 import { useSidebarLayout } from '../composables/useSidebarLayout'
 import { useUser } from '../composables/useUser'
+import { clearAuthSession } from '../utils/authStorage'
 import {
   getSubjects,
   getTrashQuestions,
@@ -165,9 +166,7 @@ const restoring = ref(false)
 const deleting = ref(false)
 
 const handleLogout = () => {
-  localStorage.removeItem('auth_token')
-  localStorage.removeItem('auth_username')
-  sessionStorage.removeItem('auth_session_ok')
+  clearAuthSession()
   router.push('/auth/login')
   ElMessage.success('已退出登录')
 }

@@ -1,4 +1,6 @@
 import os
+import random
+import string
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
@@ -8,6 +10,14 @@ from sqlalchemy.orm import Session
 from auth import get_current_user, hash_password, issue_token, verify_password
 from database import get_db
 from models import User
+
+
+def generate_user_code(db: Session) -> str:
+    while True:
+        code = ''.join(random.choices(string.digits, k=10))
+        existing = db.query(User).filter(User.user_code == code).first()
+        if not existing:
+            return code
 
 router = APIRouter()
 
@@ -24,6 +34,7 @@ class AuthResponse(BaseModel):
     token: str
     user_id: int
     username: str
+    user_code: str
 
 
 class UpdateProfileRequest(BaseModel):
@@ -49,11 +60,12 @@ def register(request: AuthRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="用户名已存在")
 
     token = issue_token()
-    user = User(username=username, password_hash=hash_password(password), token=token)
+    user_code = generate_user_code(db)
+    user = User(username=username, password_hash=hash_password(password), token=token, user_code=user_code)
     db.add(user)
     db.commit()
     db.refresh(user)
-    return {"token": token, "user_id": user.id, "username": user.username}
+    return {"token": token, "user_id": user.id, "username": user.username, "user_code": user_code}
 
 
 @router.post("/auth/login", response_model=AuthResponse)
@@ -67,7 +79,7 @@ def login(request: AuthRequest, db: Session = Depends(get_db)):
     user.token = issue_token()
     db.commit()
     db.refresh(user)
-    return {"token": user.token, "user_id": user.id, "username": user.username}
+    return {"token": user.token, "user_id": user.id, "username": user.username, "user_code": user.user_code}
 
 
 @router.get("/auth/me")
@@ -76,7 +88,8 @@ def me(current_user: User = Depends(get_current_user)):
         "user_id": current_user.id,
         "username": current_user.username,
         "avatar": current_user.avatar,
-        "signature": current_user.signature
+        "signature": current_user.signature,
+        "user_code": current_user.user_code
     }
 
 
@@ -94,7 +107,8 @@ def update_profile(
         "user_id": current_user.id,
         "username": current_user.username,
         "avatar": current_user.avatar,
-        "signature": current_user.signature
+        "signature": current_user.signature,
+        "user_code": current_user.user_code,
     }
 
 

@@ -40,6 +40,13 @@
                 </div>
                 <div class="user-info-text">
                   <h3 class="username-display">{{ username }}</h3>
+                  <div class="user-code-display">
+                    <span class="code-label">用户ID：</span>
+                    <span class="code-value">{{ userCode }}</span>
+                    <el-button size="small" @click="copyUserCode" class="copy-btn">
+                      <el-icon><CopyDocument /></el-icon>
+                    </el-button>
+                  </div>
                   <p v-if="globalSignature" class="signature-display">{{ globalSignature }}</p>
                   <p v-else class="signature-placeholder">还没有学习宣言，写一句激励自己吧！</p>
                 </div>
@@ -124,9 +131,10 @@
 import { ref, watch, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElInput, ElMessage } from 'element-plus'
-import { ArrowRight, Camera, Check, CircleClose, EditPen, Lock, Refresh, Setting } from '@element-plus/icons-vue'
+import { ArrowRight, Camera, Check, CircleClose, CopyDocument, EditPen, Lock, Refresh, Setting } from '@element-plus/icons-vue'
 import { updateProfile, uploadAvatar as apiUploadAvatar, changePassword as apiChangePassword } from '../api'
 import { useUser } from '../composables/useUser'
+import { clearAuthSession } from '../utils/authStorage'
 
 const props = defineProps({
   visible: Boolean,
@@ -136,7 +144,7 @@ const props = defineProps({
 const emit = defineEmits(['close', 'update:visible'])
 
 const router = useRouter()
-const { avatar: globalAvatar, signature: globalSignature, updateAvatar, updateSignature, loadUserInfo } = useUser()
+const { avatar: globalAvatar, signature: globalSignature, userCode, updateAvatar, updateSignature, loadUserInfo } = useUser()
 
 const avatarInput = ref(null)
 const signature = ref('')
@@ -162,6 +170,16 @@ watch(() => props.visible, async (val) => {
 
 const close = () => {
   emit('update:visible', false)
+}
+
+const copyUserCode = async () => {
+  if (!userCode.value) return
+  try {
+    await navigator.clipboard.writeText(userCode.value)
+    ElMessage.success('用户ID已复制')
+  } catch (error) {
+    ElMessage.error('复制失败')
+  }
 }
 
 const triggerAvatarUpload = () => {
@@ -235,9 +253,7 @@ const handleChangePassword = async () => {
   try {
     await apiChangePassword(oldPassword.value, newPassword.value)
     ElMessage.success('密码修改成功，请重新登录')
-    localStorage.removeItem('auth_token')
-    localStorage.removeItem('auth_username')
-    sessionStorage.removeItem('auth_session_ok')
+    clearAuthSession()
     router.push('/auth/login')
   } catch (error) {
     ElMessage.error(`修改失败：${error.response?.data?.detail || error.message}`)
@@ -472,6 +488,33 @@ const goToSettings = () => {
   font-weight: 600;
   color: #1f2937;
   letter-spacing: 0.5px;
+}
+
+.user-code-display {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.code-label {
+  font-size: 13px;
+  color: #9ca3af;
+}
+
+.code-value {
+  font-size: 14px;
+  font-weight: 500;
+  color: #4f46e5;
+  font-family: 'Courier New', monospace;
+  background: #eef2ff;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.copy-btn {
+  padding: 2px 6px;
 }
 
 .signature-display {

@@ -384,6 +384,7 @@ import { useSidebarLayout } from '../composables/useSidebarLayout'
 import { useUser } from '../composables/useUser'
 import { getSubjects, getWrongQuestions, getQuestions, submitReviewAnswer, batchSubmitReviewAnswers, getAiExplanation, updateQuestionExplanation } from '../api'
 import { getErrorMessage } from '../utils/errorHandler'
+import { clearAuthSession } from '../utils/authStorage'
 
 const router = useRouter()
 const route = useRoute()
@@ -498,9 +499,7 @@ const goToPath = (path) => {
 }
 
 const handleLogout = () => {
-  localStorage.removeItem('auth_token')
-  localStorage.removeItem('auth_username')
-  sessionStorage.removeItem('auth_session_ok')
+  clearAuthSession()
   router.push('/auth/login')
   ElMessage.success('已退出登录')
 }

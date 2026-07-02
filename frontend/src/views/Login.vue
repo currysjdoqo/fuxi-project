@@ -6,7 +6,7 @@
         <p class="hero-kicker">EXERCISE STUDIO</p>
         <h1>把练习这件事，做得更像真正的备考。</h1>
         <p class="hero-text">
-          题库、错题、复习记录放在同一套节奏里。登录后继续上一次的练习状态，不需要重新整理现场。
+          题库、错题、复习记录放在同一套节奏里。登录后继续上一轮的练习状态，不需要重新整理现场。
         </p>
 
         <div class="hero-panels">
@@ -62,7 +62,7 @@
         </el-form>
 
         <div class="divider">
-          <span>还没有账号</span>
+          <span>还没有账号？</span>
         </div>
 
         <button class="switch-link" type="button" @click="router.push('/auth/register')">
@@ -79,6 +79,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Lock, User } from '@element-plus/icons-vue'
 import { login } from '../api'
+import { clearLegacySharedAuth, saveAuthSession } from '../utils/authStorage'
 
 const router = useRouter()
 const formRef = ref(null)
@@ -101,9 +102,13 @@ const handleLogin = async () => {
   loading.value = true
   try {
     const result = await login(form.username.trim(), form.password.trim())
-    localStorage.setItem('auth_token', result.token)
-    localStorage.setItem('auth_username', result.username)
-    sessionStorage.setItem('auth_session_ok', '1')
+    saveAuthSession({
+      token: result.token,
+      username: result.username,
+      userId: result.user_id,
+      userCode: result.user_code || ''
+    })
+    clearLegacySharedAuth()
     ElMessage.success('登录成功')
     router.replace('/')
   } catch (error) {
@@ -175,8 +180,7 @@ const handleLogin = async () => {
   justify-content: space-between;
   padding: 52px;
   border-radius: 32px;
-  background:
-    linear-gradient(160deg, rgba(40, 32, 27, 0.96) 0%, rgba(63, 45, 36, 0.9) 100%);
+  background: linear-gradient(160deg, rgba(40, 32, 27, 0.96) 0%, rgba(63, 45, 36, 0.9) 100%);
   color: #f8f1e8;
   box-shadow: 0 24px 70px rgba(58, 37, 27, 0.18);
 }
@@ -328,11 +332,6 @@ const handleLogin = async () => {
   letter-spacing: 0.04em;
   background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%);
   box-shadow: 0 14px 30px rgba(184, 92, 56, 0.24);
-}
-
-.submit-btn:hover,
-.submit-btn:focus-visible {
-  transform: translateY(-1px);
 }
 
 .divider {
