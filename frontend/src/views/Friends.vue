@@ -857,11 +857,12 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .friends-shell {
+  --app-sidebar-width: clamp(220px, 18vw, 256px);
   min-height: 100vh;
   background:
-    radial-gradient(circle at top left, rgba(59, 130, 246, 0.12), transparent 24%),
-    radial-gradient(circle at 85% 18%, rgba(16, 185, 129, 0.08), transparent 22%),
-    linear-gradient(180deg, #f4f7fb 0%, #eef3f8 100%);
+    radial-gradient(circle at top left, rgba(184, 92, 56, 0.12), transparent 24%),
+    radial-gradient(circle at 85% 18%, rgba(92, 138, 53, 0.08), transparent 22%),
+    linear-gradient(180deg, #f4efe6 0%, #e8dfd0 100%);
 }
 
 .friends-shell .desktop-sidebar-handle {
@@ -909,8 +910,8 @@ onBeforeUnmount(() => {
   align-items: center;
   padding: 6px 12px;
   border-radius: 999px;
-  background: #dbeafe;
-  color: #1d4ed8;
+  background: rgba(184, 92, 56, 0.15);
+  color: #b85c38;
   font-size: 12px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -924,9 +925,9 @@ onBeforeUnmount(() => {
 }
 
 .focus-action {
-  border-color: #bfdbfe;
-  color: #1d4ed8;
-  background: #eff6ff;
+  border-color: rgba(184, 92, 56, 0.3);
+  color: #b85c38;
+  background: rgba(184, 92, 56, 0.08);
 }
 
 .inline-badge {
@@ -936,11 +937,21 @@ onBeforeUnmount(() => {
 .friends-board {
   flex: 1;
   min-height: 0;
-  display: grid;
-  grid-template-columns: minmax(320px, 360px) minmax(0, 1fr);
+  display: flex;
   gap: 20px;
   padding: 20px 28px 28px;
   overflow: hidden;
+}
+
+.friends-sidebar {
+  flex: 0 0 auto;
+  width: min(360px, 40vw);
+  min-width: 300px;
+}
+
+.chat-stage {
+  flex: 1;
+  min-width: 0;
 }
 
 .friends-sidebar,
@@ -972,7 +983,7 @@ onBeforeUnmount(() => {
   font-size: 12px;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: #3b82f6;
+  color: #b85c38;
 }
 
 .sidebar-top h2 {
@@ -991,15 +1002,15 @@ onBeforeUnmount(() => {
 .summary-card {
   padding: 14px 12px;
   border-radius: 18px;
-  background: linear-gradient(180deg, #f8fafc 0%, #eff6ff 100%);
+  background: linear-gradient(180deg, #f8f4ec 0%, #f0e6d6 100%);
 }
 
 .summary-card.accent {
-  background: linear-gradient(180deg, #eff6ff 0%, #dbeafe 100%);
+  background: linear-gradient(180deg, rgba(184, 92, 56, 0.1) 0%, rgba(184, 92, 56, 0.06) 100%);
 }
 
 .summary-card.warm {
-  background: linear-gradient(180deg, #fff7ed 0%, #ffedd5 100%);
+  background: linear-gradient(180deg, rgba(92, 138, 53, 0.1) 0%, rgba(92, 138, 53, 0.06) 100%);
 }
 
 .summary-card span {
@@ -1045,13 +1056,13 @@ onBeforeUnmount(() => {
   font-size: 12px;
   line-height: 20px;
   color: #fff;
-  background: #2563eb;
+  background: #b85c38;
 }
 
 .pane-button.active {
-  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  background: linear-gradient(135deg, #b85c38 0%, #8d3f1f 100%);
   color: #fff;
-  box-shadow: 0 12px 24px rgba(37, 99, 235, 0.2);
+  box-shadow: 0 12px 24px rgba(184, 92, 56, 0.2);
 }
 
 .sidebar-scroll {
@@ -1096,8 +1107,8 @@ onBeforeUnmount(() => {
 }
 
 .friend-card.active {
-  border-color: #60a5fa;
-  background: linear-gradient(180deg, #eff6ff 0%, #ffffff 100%);
+  border-color: #b85c38;
+  background: linear-gradient(180deg, rgba(184, 92, 56, 0.08) 0%, #ffffff 100%);
 }
 
 .friend-meta,
@@ -1150,8 +1161,8 @@ onBeforeUnmount(() => {
 }
 
 .share-card.pending {
-  border-color: #bfdbfe;
-  background: linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
+  border-color: rgba(184, 92, 56, 0.3);
+  background: linear-gradient(180deg, rgba(184, 92, 56, 0.04) 0%, #ffffff 100%);
 }
 
 .chat-stage {
@@ -1226,22 +1237,22 @@ onBeforeUnmount(() => {
   overflow-y: auto;
   padding: 24px;
   background:
-    radial-gradient(circle at top right, rgba(96, 165, 250, 0.1), transparent 18%),
-    linear-gradient(180deg, #f8fbff 0%, #f8fafc 100%);
+    radial-gradient(circle at top right, rgba(184, 92, 56, 0.1), transparent 18%),
+    linear-gradient(180deg, #f8f4ec 0%, #f4efe6 100%);
 }
 
 .inline-share-box {
   margin-bottom: 20px;
   padding: 16px;
-  border: 1px solid #dbeafe;
+  border: 1px solid rgba(184, 92, 56, 0.2);
   border-radius: 18px;
-  background: rgba(239, 246, 255, 0.9);
+  background: rgba(184, 92, 56, 0.06);
 }
 
 .inline-share-title {
   margin-bottom: 12px;
   font-size: 13px;
-  color: #1d4ed8;
+  color: #b85c38;
 }
 
 .inline-share-card {
@@ -1286,7 +1297,7 @@ onBeforeUnmount(() => {
 }
 
 .message-row.self .message-bubble {
-  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  background: linear-gradient(135deg, #b85c38 0%, #8d3f1f 100%);
   color: #fff;
 }
 
@@ -1344,7 +1355,7 @@ onBeforeUnmount(() => {
 
 .chat-empty .el-icon {
   font-size: 72px;
-  color: #93c5fd;
+  color: #d4a574;
 }
 
 .chat-empty h3 {
@@ -1360,14 +1371,21 @@ onBeforeUnmount(() => {
 
 @media (max-width: 1280px) {
   .friends-board {
-    grid-template-columns: 340px minmax(0, 1fr);
     padding: 18px;
+  }
+  .friends-sidebar {
+    width: min(340px, 40vw);
   }
 }
 
 @media (max-width: 1100px) {
   .friends-board {
-    grid-template-columns: 1fr;
+    flex-direction: column;
+  }
+  .friends-sidebar {
+    width: 100%;
+    min-width: auto;
+    max-height: 300px;
   }
 }
 

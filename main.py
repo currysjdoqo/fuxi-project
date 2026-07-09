@@ -1,10 +1,14 @@
 from pathlib import Path
+from os import getenv
+from dotenv import load_dotenv
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from database import Base, engine
+
+load_dotenv()
 from routers.auth import router as auth_router
 from routers.export import router as export_router
 from routers.ai import router as ai_router
@@ -29,9 +33,19 @@ app = FastAPI(
 
 Base.metadata.create_all(bind=engine)
 
+allowed_origins = [
+    origin.strip()
+    for origin in getenv("ALLOWED_ORIGINS", "").split(",")
+    if origin.strip()
+]
+
+if not allowed_origins:
+    import logging
+    logging.warning("ALLOWED_ORIGINS environment variable is empty or not set. All cross-origin requests will be blocked.")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

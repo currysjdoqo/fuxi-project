@@ -2,50 +2,43 @@
 AI 讲解 API 路由
 """
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from typing import Optional
 import time
 from collections import defaultdict
+import threading
 
+from auth import get_current_user
 from database import get_db
-from models import Question, Subject
+from models import Question, Subject, User
 from utils.deepseek import get_ai_explanation, has_api_key
 
 router = APIRouter(prefix="/ai", tags=["AI讲解"])
 
-# 简单的内存速率限制器
 rate_limit_store = defaultdict(list)
 RATE_LIMIT = 5
 RATE_LIMIT_WINDOW = 60
+_rate_limit_lock = threading.Lock()
 
 
-def check_rate_limit(ip: str) -> bool:
-    """检查速率限制"""
+def check_rate_limit(user_id: int) -> bool:
     now = time.time()
-    # 移除过期的请求记录
-    rate_limit_store[ip] = [t for t in rate_limit_store[ip] if now - t < RATE_LIMIT_WINDOW]
-    # 检查是否超过限制
-    if len(rate_limit_store[ip]) >= RATE_LIMIT:
-        return False
-    # 记录当前请求
-    rate_limit_store[ip].append(now)
+    with _rate_limit_lock:
+        rate_limit_store[user_id] = [t for t in rate_limit_store[user_id] if now - t < RATE_LIMIT_WINDOW]
+        if len(rate_limit_store[user_id]) >= RATE_LIMIT:
+            return False
+        rate_limit_store[user_id].append(now)
     return True
 
 
 @router.get("/explain")
 async def explain_question(
     question_id: int = Query(...),
-    request: Request = None
+    current_user: User = Depends(get_current_user)
 ):
     """获取题目讲解（每分钟最多调用 5 次）"""
-    # 获取客户端 IP
-    client_ip = "default"
-    if request:
-        client_ip = request.client.host if request.client else "default"
-    
-    # 速率限制检查
-    if not check_rate_limit(client_ip):
+    if not check_rate_limit(current_user.id):
         raise HTTPException(
             status_code=429,
             detail="请求过于频繁，请稍后再试（每分钟最多 5 次）"

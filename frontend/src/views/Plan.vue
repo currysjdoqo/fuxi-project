@@ -284,28 +284,31 @@ onMounted(() => {
 
 <style scoped>
 .plan-page {
+  --sidebar-width: clamp(220px, 18vw, 256px);
   display: flex;
   min-height: 100vh;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, rgba(184, 92, 56, 0.08) 0%, rgba(184, 92, 56, 0.04) 50%, rgba(139, 63, 31, 0.06) 100%);
 }
 
 .sidebar {
-  width: 240px;
-  background: rgba(255, 255, 255, 0.95);
-  color: #1e293b;
+  width: var(--sidebar-width);
+  flex: 0 0 var(--sidebar-width);
+  background: linear-gradient(180deg, #3d2f24 0%, #2c2416 100%);
+  color: #f8f4ec;
   display: flex;
   flex-direction: column;
-  box-shadow: 2px 0 10px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+  box-shadow: 2px 0 10px rgba(44, 36, 22, 0.15);
 }
 
 .logo-section {
   padding: 24px 20px;
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .logo-icon {
   font-size: 40px;
-  color: #667eea;
+  color: #b85c38;
   margin-bottom: 12px;
 }
 
@@ -313,6 +316,7 @@ onMounted(() => {
   margin: 0;
   font-size: 18px;
   font-weight: 600;
+  color: #f8f4ec;
 }
 
 .nav-menu {
@@ -329,16 +333,16 @@ onMounted(() => {
   cursor: pointer;
   transition: all 0.2s ease;
   margin-bottom: 4px;
-  color: #64748b;
+  color: #a89985;
 }
 
 .nav-item:hover {
-  background: rgba(102, 126, 234, 0.1);
-  color: #667eea;
+  background: rgba(184, 92, 56, 0.1);
+  color: #f8f4ec;
 }
 
 .nav-item.active {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #b85c38 0%, #8d3f1f 100%);
   color: white;
 }
 
@@ -350,7 +354,7 @@ onMounted(() => {
 
 .page-header {
   margin-bottom: 32px;
-  color: white;
+  color: #2c2416;
 }
 
 .page-header h1 {
@@ -362,13 +366,24 @@ onMounted(() => {
 .page-header p {
   margin: 0;
   font-size: 16px;
-  opacity: 0.9;
+  opacity: 0.8;
+  color: #6b5b45;
 }
 
 .plan-container {
-  display: grid;
-  grid-template-columns: 320px 1fr;
+  display: flex;
   gap: 24px;
+}
+
+.calendar-section {
+  flex: 0 0 auto;
+  width: min(320px, 35vw);
+  min-width: 260px;
+}
+
+.tasks-section {
+  flex: 1;
+  min-width: 0;
 }
 
 .calendar-card {
@@ -384,7 +399,7 @@ onMounted(() => {
 
 .date-info {
   padding: 16px;
-  background: linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 100%);
+  background: linear-gradient(135deg, #f8f4ec 0%, #e8dfd0 100%);
   border-radius: 12px;
 }
 
@@ -394,7 +409,7 @@ onMounted(() => {
   gap: 8px;
   font-size: 16px;
   font-weight: 600;
-  color: #1e293b;
+  color: #2c2416;
   margin-bottom: 12px;
 }
 
@@ -405,12 +420,12 @@ onMounted(() => {
 }
 
 .completed {
-  color: #22c55e;
+  color: #5c8a35;
   font-weight: 600;
 }
 
 .total {
-  color: #64748b;
+  color: #6b5b45;
 }
 
 .tasks-card {
@@ -438,25 +453,25 @@ onMounted(() => {
   align-items: center;
   gap: 12px;
   padding: 16px;
-  background: #f8fafc;
+  background: #f8f4ec;
   border-radius: 12px;
   margin-bottom: 12px;
   transition: all 0.2s ease;
 }
 
 .task-item:hover {
-  background: #f1f5f9;
+  background: #e8dfd0;
   transform: translateX(4px);
 }
 
 .task-item.completed {
-  background: #f0fdf4;
+  background: rgba(92, 138, 53, 0.1);
   opacity: 0.7;
 }
 
 .task-item.completed .task-content {
   text-decoration: line-through;
-  color: #94a3b8;
+  color: #8b7b65;
 }
 
 .task-checkbox {
@@ -466,7 +481,7 @@ onMounted(() => {
 .task-content {
   flex: 1;
   font-size: 15px;
-  color: #1e293b;
+  color: #2c2416;
 }
 
 .task-actions {

@@ -12,8 +12,8 @@ from database import get_db
 from models import Question, Subject, User
 from routers.subjects import get_or_create_default_subject
 from utils.answer_normalizer import normalize_question_type, normalize_standard_answer
-from utils.ai_import import extract_text_for_ai_fallback, parse_questions_with_ai
-from utils.file_extract import TEXT_EXTRACT_EXTENSIONS, extract_text_from_file, extract_zip_file, save_uploaded_file
+from utils.ai_import import extract_text_for_ai_fallback, parse_image_with_ai, parse_questions_with_ai
+from utils.file_extract import IMAGE_EXTENSIONS, TEXT_EXTRACT_EXTENSIONS, extract_text_from_file, extract_zip_file, save_uploaded_file
 from utils.import_template import generate_excel_template
 from utils.parser import parse_exercise_text, parse_file
 
@@ -221,8 +221,13 @@ async def ai_parse_uploaded_file(
     if not file_bytes:
         raise HTTPException(status_code=400, detail="上传文件为空")
 
-    text = extract_text_for_ai_fallback(file.filename, file_bytes)
-    questions, errors = await parse_questions_with_ai(text, file.filename)
+    suffix = Path(file.filename).suffix.lower()
+    if suffix in IMAGE_EXTENSIONS:
+        questions, errors = await parse_image_with_ai(file_bytes, file.filename)
+    else:
+        text = extract_text_for_ai_fallback(file.filename, file_bytes)
+        questions, errors = await parse_questions_with_ai(text, file.filename)
+
     return {
         "filename": file.filename,
         "parsed_questions": [ParsedQuestion(**q) for q in questions],

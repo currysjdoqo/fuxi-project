@@ -1,3 +1,4 @@
+import base64
 import json
 import re
 from io import BytesIO
@@ -8,7 +9,7 @@ import httpx
 
 from routers.settings import _get_deepseek_api_key
 from utils.answer_normalizer import normalize_question_type, normalize_standard_answer
-from utils.file_extract import TEXT_EXTRACT_EXTENSIONS, _extract_from_txt, extract_text_from_file
+from utils.file_extract import IMAGE_EXTENSIONS, TEXT_EXTRACT_EXTENSIONS, _extract_from_txt, extract_text_from_file
 
 DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
 DEEPSEEK_MODEL = "deepseek-v4-flash"
@@ -183,6 +184,90 @@ async def parse_questions_with_ai(text: str, source_name: Optional[str] = None) 
                     "messages": [
                         {"role": "system", "content": "你是一个只返回合法 JSON 的题库结构化提取器。"},
                         {"role": "user", "content": prompt},
+                    ],
+                    "temperature": 0.1,
+                    "max_tokens": 4000,
+                    "response_format": {"type": "json_object"},
+                },
+            )
+    except httpx.TimeoutException:
+        return [], ["AI 解析超时，请稍后重试"]
+    except httpx.ConnectError:
+        return [], ["无法连接 DeepSeek API，请检查网络"]
+    except Exception as exc:
+        return [], [f"AI 解析请求失败: {exc}"]
+
+    if response.status_code == 401:
+        return [], ["DeepSeek API Key 无效或已过期"]
+    if response.status_code == 429:
+        return [], ["DeepSeek API 调用次数过多，请稍后重试"]
+    if response.status_code >= 400:
+        return [], [f"DeepSeek API 调用失败: HTTP {response.status_code}"]
+
+    try:
+        result = response.json()
+        content = result["choices"][0]["message"]["content"]
+        payload = _extract_json_payload(content)
+    except Exception as exc:
+        return [], [f"AI 返回结果无法解析: {exc}"]
+
+    return sanitize_ai_questions(payload)
+
+
+async def parse_image_with_ai(image_bytes: bytes, filename: str) -> tuple[list[dict[str, Any]], list[str]]:
+    api_key = _get_deepseek_api_key()
+    if not api_key:
+        return [], ["尚未配置 DeepSeek API Key"]
+
+    if not image_bytes:
+        return [], ["图片文件为空"]
+
+    try:
+        image_base64 = base64.b64encode(image_bytes).decode("utf-8")
+    except Exception as exc:
+        return [], [f"图片编码失败: {exc}"]
+
+    suffix = Path(filename).suffix.lower().lstrip(".")
+    if not suffix:
+        suffix = "png"
+
+    prompt = """你是题库导入助手。请识别图片中的题目内容，并提取成题目 JSON。
+
+要求：
+1. 只能输出 JSON，不能输出任何额外解释。
+2. 输出格式必须是数组，每个元素包含：type, content, options, answer, explanation。
+3. type 只能是：single, multi, judge, fill, short, code。
+4. single/multi 的 options 必须是对象，键只能是 A-F。
+5. judge 的 answer 只能是 T 或 F，options 固定为 {"T":"正确","F":"错误"}。
+6. fill/short/code 没有选项时，options 返回空对象。
+7. 无法确定的题目不要编造，直接跳过。
+8. 如果图片里没有解析，explanation 返回空字符串。
+9. 如果图片中有多道题目，请全部识别并输出。"""
+
+    try:
+        async with httpx.AsyncClient(timeout=90.0) as client:
+            response = await client.post(
+                DEEPSEEK_API_URL,
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": "deepseek-v2-chat",
+                    "messages": [
+                        {"role": "system", "content": "你是一个只返回合法 JSON 的题库结构化提取器。"},
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": prompt},
+                                {
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": f"data:image/{suffix};base64,{image_base64}",
+                                    },
+                                },
+                            ],
+                        },
                     ],
                     "temperature": 0.1,
                     "max_tokens": 4000,

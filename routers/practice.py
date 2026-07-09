@@ -147,6 +147,55 @@ def get_questions(
     return query.order_by(Question.id.asc()).offset(skip).limit(limit).all()
 
 
+@router.get("/questions/summary")
+def get_questions_summary(
+    subject_id: Optional[int] = None,
+    question_type: Optional[str] = None,
+    important_only: bool = False,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    query = db.query(Question).filter(Question.deleted_at.is_(None), Question.user_id == current_user.id)
+    if subject_id is not None:
+        subject = db.query(Subject).filter(Subject.id == subject_id, Subject.user_id == current_user.id).first()
+        if not subject:
+            raise HTTPException(status_code=404, detail="科目不存在")
+        query = query.filter(Question.subject_id == subject_id)
+    if question_type and question_type != "all":
+        query = query.filter(Question.type == normalize_question_type(question_type))
+    if important_only:
+        query = query.filter(Question.is_important == 1)
+
+    total = query.count()
+    questions = query.order_by(Question.id.asc()).all()
+    
+    return {
+        "total": total,
+        "questions": [
+            {
+                "id": q.id,
+                "content": q.content[:50] + "..." if len(q.content) > 50 else q.content,
+                "type": q.type,
+                "is_important": q.is_important,
+                "subject_id": q.subject_id
+            }
+            for q in questions
+        ]
+    }
+
+
+@router.get("/questions/{question_id}/detail")
+def get_question_detail(
+    question_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    question = get_user_question(db, current_user.id, question_id)
+    if not question:
+        raise HTTPException(status_code=404, detail="题目不存在")
+    return question
+
+
 @router.patch("/questions/{question_id}/type", response_model=QuestionOut)
 def update_question_type(
     question_id: int,
@@ -324,8 +373,24 @@ def batch_submit_practice(request: BatchSubmitRequest, db: Session = Depends(get
     threshold = get_wrong_question_threshold()
     results = []
     
+    question_ids = [s.question_id for s in request.submissions]
+    unique_question_ids = list(set(question_ids))
+    
+    questions = db.query(Question).filter(
+        Question.id.in_(unique_question_ids),
+        Question.user_id == current_user.id,
+        Question.deleted_at.is_(None)
+    ).all()
+    question_map = {q.id: q for q in questions}
+    
+    wrong_questions = db.query(WrongQuestion).filter(
+        WrongQuestion.question_id.in_(unique_question_ids),
+        WrongQuestion.user_id == current_user.id
+    ).all()
+    wrong_question_map = {wq.question_id: wq for wq in wrong_questions}
+    
     for submission in request.submissions:
-        question = get_user_question(db, current_user.id, submission.question_id)
+        question = question_map.get(submission.question_id)
         if not question:
             results.append({
                 "question_id": submission.question_id,
@@ -358,20 +423,23 @@ def batch_submit_practice(request: BatchSubmitRequest, db: Session = Depends(get
         removed_from_wrong = False
         remaining_to_remove = 0
         
-        wrong_question = db.query(WrongQuestion).filter(WrongQuestion.question_id == submission.question_id, WrongQuestion.user_id == current_user.id).first()
+        wrong_question = wrong_question_map.get(submission.question_id)
         if not is_correct:
             if wrong_question:
                 wrong_question.review_count = wrong_question.review_count + 1
                 wrong_question.correct_count = 0
                 wrong_question.last_reviewed_at = datetime.utcnow()
             else:
-                db.add(WrongQuestion(user_id=current_user.id, question_id=submission.question_id, correct_count=0))
+                new_wrong = WrongQuestion(user_id=current_user.id, question_id=submission.question_id, correct_count=0)
+                db.add(new_wrong)
+                wrong_question_map[submission.question_id] = new_wrong
         else:
             if wrong_question:
                 wrong_question.correct_count = (wrong_question.correct_count or 0) + 1
                 wrong_question.last_reviewed_at = datetime.utcnow()
                 if wrong_question.correct_count >= threshold:
                     db.delete(wrong_question)
+                    del wrong_question_map[submission.question_id]
                     removed_from_wrong = True
                 else:
                     remaining_to_remove = threshold - wrong_question.correct_count

@@ -1,63 +1,17 @@
 <template>
-  <div class="app-layout" :class="{ 'sidebar-collapsed': sidebarCollapsed, 'mobile-nav-open': mobileNavOpen }">
-    <div v-if="mobileNavOpen" class="mobile-nav-mask" @click="closeMobileNav"></div>
-    <nav class="sidebar" :class="{ collapsed: sidebarCollapsed, open: mobileNavOpen }">
-      <div class="logo-section">
-        <div class="logo-group">
-          <el-icon class="logo-icon"><Document /></el-icon>
-          <div class="logo-copy">
-            <h2>习题管理系统</h2>
-            <span>Practice Workspace</span>
-          </div>
-        </div>
-        <el-button
-          v-if="isMobileNav"
-          circle
-          text
-          class="sidebar-toggle mobile-close"
-          :icon="Close"
-          @click="closeMobileNav"
-        />
-      </div>
-
-      <div class="nav-menu">
-        <div class="nav-section-title">功能导航</div>
-        <div
-          v-for="item in navItems"
-          :key="item.path"
-          class="nav-item"
-          :class="{ active: route.path === item.path }"
-          @click="goToPath(item.path)"
-        >
-          <el-icon><component :is="item.icon" /></el-icon>
-          <span>{{ item.label }}</span>
-        </div>
-      </div>
-
-      <div class="user-section">
-        <div class="user-info">
-          <div class="avatar" :style="{ background: avatar ? `url(${avatar}) center/cover` : undefined }" @click="showProfileModal = true">
-            <template v-if="!avatar">{{ username.charAt(0).toUpperCase() }}</template>
-          </div>
-          <div class="user-details">
-            <span class="username">{{ username }}</span>
-            <span class="logout-btn" @click="handleLogout">退出登录</span>
-          </div>
-        </div>
-      </div>
-    </nav>
-
-    <div class="main-content">
-      <button
-        v-if="!isMobileNav"
-        type="button"
-        class="desktop-sidebar-handle"
-        :class="{ collapsed: sidebarCollapsed }"
-        :aria-label="sidebarCollapsed ? '展开导航栏' : '隐藏导航栏'"
-        @click="toggleSidebar"
+  <Layout :username="username" :avatar="avatar" @show-profile="showProfileModal = true" @logout="handleLogout">
+    <template #nav-items>
+      <div
+        v-for="item in navItems"
+        :key="item.path"
+        class="nav-item"
+        :class="{ active: route.path === item.path }"
+        @click="goToPath(item.path)"
       >
-        {{ sidebarCollapsed ? '>' : '<' }}
-      </button>
+        <el-icon><component :is="item.icon" /></el-icon>
+        <span>{{ item.label }}</span>
+      </div>
+    </template>
       <div class="practice-page">
         <header class="page-header">
           <div class="header-main">
@@ -573,6 +527,7 @@ import {
 } from '@element-plus/icons-vue'
 import ExportDialog from '../components/ExportDialog.vue'
 import ProfileModal from '../components/ProfileModal.vue'
+import Layout from '../components/Layout/Layout.vue'
 import { useUser } from '../composables/useUser'
 import { clearAuthSession } from '../utils/authStorage'
 import {
@@ -583,7 +538,9 @@ import {
   deleteQuestion as apiDeleteQuestion,
   getAiExplanation,
   getPlanItemsByDate,
+  getQuestionDetail,
   getQuestions,
+  getQuestionsSummary,
   getSubjects,
   submitAnswer as apiSubmitAnswer,
   updateQuestionExplanation,
@@ -617,6 +574,7 @@ const subjectCreating = ref(false)
 const subjectDeletingId = ref(null)
 const allQuestions = ref([])
 const questions = ref([])
+const questionDetailCache = ref({})
 const currentIndex = ref(0)
 const selectedAnswer = ref('')
 const answers = ref({})
@@ -643,23 +601,17 @@ const planFloatDragging = ref(false)
 const planFloatDragOffset = ref({ x: 0, y: 0 })
 const PLAN_FLOAT_STORAGE_KEY = 'home_plan_float_position'
 const PLAN_FLOAT_COLLAPSED_KEY = 'home_plan_float_collapsed'
-const SIDEBAR_COLLAPSED_KEY = 'home_sidebar_collapsed'
 const pendingSubmissions = ref([])
 const batchSubmitting = ref(false)
 const practiceMode = ref('sequential')
 const practiceQuestionCount = ref(20)
 const practiceStartIndex = ref(1)
 const practiceEndIndex = ref(20)
-const sidebarCollapsed = ref(false)
-const mobileNavOpen = ref(false)
 const viewportWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1280)
 const exportDialogVisible = ref(false)
 
 const goToPath = (path) => {
   if (route.path === path) return
-  if (isMobileNav.value) {
-    mobileNavOpen.value = false
-  }
   router.push(path)
 }
 
@@ -677,39 +629,6 @@ const getLocalDateString = () => {
   return `${year}-${month}-${day}`
 }
 
-const saveSidebarState = () => {
-  localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(sidebarCollapsed.value))
-}
-
-const toggleSidebar = () => {
-  sidebarCollapsed.value = !sidebarCollapsed.value
-  saveSidebarState()
-}
-
-const toggleMobileNav = () => {
-  mobileNavOpen.value = !mobileNavOpen.value
-}
-
-const closeMobileNav = () => {
-  mobileNavOpen.value = false
-}
-
-const syncLayoutMode = () => {
-  viewportWidth.value = window.innerWidth
-  if (isMobileNav.value) {
-    mobileNavOpen.value = false
-    sidebarCollapsed.value = false
-    return
-  }
-
-  try {
-    const stored = localStorage.getItem(SIDEBAR_COLLAPSED_KEY)
-    sidebarCollapsed.value = stored === 'true'
-  } catch (error) {
-    sidebarCollapsed.value = false
-  }
-}
-
 const formatPlanDate = (dateStr) => {
   if (!dateStr) return ''
   const date = new Date(`${dateStr}T00:00:00`)
@@ -717,7 +636,7 @@ const formatPlanDate = (dateStr) => {
 }
 
 const showPlanFloat = computed(() => !selectedSubject.value)
-const isMobileNav = computed(() => viewportWidth.value <= 1180)
+const isMobileNav = computed(() => viewportWidth.value <= 768)
 const planFloatStyle = computed(() => ({
   left: `${planFloatPosition.value.left}px`,
   top: `${planFloatPosition.value.top}px`
@@ -820,7 +739,11 @@ const questionTypeOptions = [
   ...editableTypeOptions
 ]
 
-const currentQuestion = computed(() => questions.value[currentIndex.value])
+const currentQuestion = computed(() => {
+  const question = questions.value[currentIndex.value]
+  if (!question) return null
+  return questionDetailCache.value[question.id] || question
+})
 const isOptionQuestion = computed(() => ['single', 'multi', 'judge'].includes(currentQuestion.value?.type))
 const isMultiQuestion = computed(() => currentQuestion.value?.type === 'multi')
 const answerOptions = computed(() => {
@@ -1083,7 +1006,9 @@ const backToSubjects = () => {
 const loadQuestions = async () => {
   if (!selectedSubject.value) return
   try {
-    allQuestions.value = await getQuestions(0, 1000, selectedSubject.value.id, selectedQuestionType.value)
+    questionDetailCache.value = {}
+    const result = await getQuestionsSummary(selectedSubject.value.id, selectedQuestionType.value)
+    allQuestions.value = result.questions || []
     if (allQuestions.value.length && practiceQuestionCount.value > allQuestions.value.length) {
       practiceQuestionCount.value = allQuestions.value.length
     }
@@ -1194,8 +1119,20 @@ const openAnswerEditor = async () => {
   }
 }
 
-const selectQuestion = (index) => {
+const selectQuestion = async (index) => {
   currentIndex.value = Math.max(0, Math.min(index, Math.max(questions.value.length - 1, 0)))
+  const question = questions.value[currentIndex.value]
+  
+  if (question && !questionDetailCache.value[question.id]) {
+    try {
+      const detail = await getQuestionDetail(question.id)
+      questionDetailCache.value[question.id] = detail
+      questions.value[currentIndex.value] = detail
+    } catch (error) {
+      ElMessage.error(`加载题目详情失败：${error.response?.data?.detail || error.message}`)
+    }
+  }
+  
   const savedAnswer = answers.value[currentIndex.value]
   selectedAnswer.value = savedAnswer?.userAnswer || ''
   showResult.value = Boolean(savedAnswer)
@@ -1494,10 +1431,8 @@ watch(currentIndex, () => {
 onMounted(async () => {
   window.addEventListener('keydown', handlePracticeEnterKey)
   window.addEventListener('resize', initPlanFloatPosition)
-  window.addEventListener('resize', syncLayoutMode)
   await loadUserInfo()
   await loadSubjects()
-  syncLayoutMode()
   initPlanFloatPosition()
   loadTodayPlan()
   const subjectId = Number(route.query.subject_id)
@@ -1623,278 +1558,17 @@ const saveOptions = async () => {
 onUnmounted(() => {
   window.removeEventListener('keydown', handlePracticeEnterKey)
   window.removeEventListener('resize', initPlanFloatPosition)
-  window.removeEventListener('resize', syncLayoutMode)
   window.removeEventListener('pointermove', movePlanFloat)
   window.removeEventListener('pointerup', endPlanFloatDrag)
 })
 </script>
 
 <style scoped>
-.app-layout {
-  --sidebar-width: clamp(220px, 18vw, 256px);
-  --primary-color: #4f46e5;
-  --primary-light: #eef2ff;
-  --success-color: #10b981;
-  --warning-color: #f59e0b;
-  --danger-color: #ef4444;
-  --text-primary: #1e293b;
-  --text-secondary: #64748b;
-  --text-muted: #94a3b8;
-  --bg-primary: #ffffff;
-  --bg-secondary: #f8fafc;
-  --bg-gradient-start: #f0fdf4;
-  --bg-gradient-end: #fef3c7;
-  --border-color: #e2e8f0;
-  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
-  --radius-xl: 24px;
-  display: flex;
-  min-height: 100vh;
-  background: linear-gradient(135deg, #fdf2f8 0%, #f0f9ff 50%, #fef9c3 100%);
-  background-attachment: fixed;
-}
-
-.mobile-nav-mask {
-  position: fixed;
-  inset: 0;
-  z-index: 90;
-  background: rgba(15, 23, 42, 0.36);
-  backdrop-filter: blur(4px);
-}
-
-.sidebar {
-  width: var(--sidebar-width);
-  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
-  color: var(--text-primary);
-  display: flex;
-  flex-direction: column;
-  position: relative;
-  flex: 0 0 var(--sidebar-width);
-  min-height: 100vh;
-  z-index: 100;
-  overflow: hidden;
-  transition: width 0.25s ease, flex-basis 0.25s ease, transform 0.25s ease, opacity 0.2s ease;
-  box-shadow: var(--shadow-lg);
-  border-right: 1px solid var(--border-color);
-}
-
-.app-layout.sidebar-collapsed .sidebar {
-  width: 0;
-  flex-basis: 0;
-  opacity: 0;
-}
-
-.logo-group {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  min-width: 0;
-}
-
-.logo-copy {
-  min-width: 0;
-}
-
-.logo-copy span {
-  display: block;
-  margin-top: 2px;
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  color: #94a3b8;
-}
-
-.sidebar-toggle {
-  color: #cbd5e1;
-}
-
-.mobile-close {
-  display: none;
-}
-
-.nav-section-title {
-  padding: 0 16px 10px;
-  font-size: 11px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: #64748b;
-}
-
-.logo-section {
-  padding: 28px 20px;
-  border-bottom: 1px solid var(--border-color);
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  background: linear-gradient(135deg, var(--primary-light) 0%, #ffffff 100%);
-}
-
-.logo-icon {
-  font-size: 44px;
-  color: var(--primary-color);
-  filter: drop-shadow(0 4px 8px rgba(79, 70, 229, 0.2));
-}
-
-.logo-section h2 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  background: linear-gradient(135deg, var(--primary-color) 0%, #8b5cf6 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-.nav-menu {
-  flex: 1;
-  padding: 16px 12px;
-  overflow-y: auto;
-}
-
-.nav-item {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 14px 16px;
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  margin-bottom: 6px;
-  color: var(--text-secondary);
-  position: relative;
-  overflow: hidden;
-}
-
-.nav-item::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 3px;
-  background: var(--primary-color);
-  transform: scaleY(0);
-  transition: transform 0.3s ease;
-}
-
-.nav-item:hover {
-  background: var(--primary-light);
-  color: var(--primary-color);
-  transform: translateX(4px);
-}
-
-.nav-item:hover::before {
-  transform: scaleY(1);
-}
-
-.nav-item.active {
-  background: linear-gradient(135deg, var(--primary-color) 0%, #7c3aed 100%);
-  color: white;
-  box-shadow: var(--shadow-md);
-}
-
-.nav-item.active::before {
-  transform: scaleY(1);
-  background: rgba(255, 255, 255, 0.5);
-}
-
-.nav-item .el-icon {
-  font-size: 22px;
-  min-width: 24px;
-  transition: transform 0.3s ease;
-}
-
-.nav-item:hover .el-icon {
-  transform: scale(1.1);
-}
-
-.nav-item span {
-  font-size: 15px;
-  font-weight: 500;
-}
-
-.user-section {
-  padding: 20px;
-  border-top: 1px solid var(--border-color);
-  background: var(--bg-secondary);
-}
-
-.user-info {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 12px;
-  border-radius: var(--radius-md);
-  background: white;
-  box-shadow: var(--shadow-sm);
-  transition: all 0.3s ease;
-}
-
-.user-info:hover {
-  box-shadow: var(--shadow-md);
-}
-
-.avatar {
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 16px;
-  font-weight: 700;
-  color: white;
-  background: linear-gradient(135deg, var(--primary-color) 0%, #f43f5e 100%);
-  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
-  transition: transform 0.3s ease;
-}
-
-.user-info:hover .avatar {
-  transform: scale(1.05);
-}
-
-.user-details {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.username {
-  font-weight: 600;
-  font-size: 15px;
-  color: var(--text-primary);
-}
-
-.user-role {
-  font-size: 12px;
-  color: var(--text-muted);
-}
-
-.logout-btn {
-  font-size: 14px;
-  color: var(--text-secondary);
-  cursor: pointer;
-  padding: 6px 12px;
-  border-radius: var(--radius-sm);
-  transition: all 0.2s ease;
-}
-
-.logout-btn:hover {
-  color: var(--danger-color);
-  background: rgba(239, 68, 68, 0.1);
-}
-
 .main-content {
   flex: 1;
   position: relative;
   min-width: 0;
   min-height: 100vh;
-  transition: width 0.25s ease;
 }
 
 .desktop-sidebar-handle {
@@ -1904,21 +1578,21 @@ onUnmounted(() => {
   z-index: 110;
   width: 36px;
   height: 36px;
-  border: 1px solid #dbeafe;
+  border: 1px solid rgba(184, 92, 56, 0.2);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.96);
-  color: #1d4ed8;
+  color: #b85c38;
   font-size: 18px;
   line-height: 1;
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
+  box-shadow: 0 10px 24px rgba(44, 36, 22, 0.12);
   cursor: pointer;
   transition: left 0.25s ease, background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .desktop-sidebar-handle:hover {
-  background: #1d4ed8;
+  background: #b85c38;
   color: #fff;
-  box-shadow: 0 14px 28px rgba(29, 78, 216, 0.2);
+  box-shadow: 0 14px 28px rgba(184, 92, 56, 0.3);
 }
 
 .desktop-sidebar-handle.collapsed {
@@ -1967,8 +1641,8 @@ onUnmounted(() => {
   min-width: 0;
   padding: 8px 12px;
   border-radius: 999px;
-  background: #eff6ff;
-  color: #1d4ed8;
+  background: rgba(184, 92, 56, 0.1);
+  color: #b85c38;
   font-size: 13px;
 }
 
@@ -2046,7 +1720,7 @@ onUnmounted(() => {
   left: 0;
   right: 0;
   height: 4px;
-  background: linear-gradient(90deg, var(--primary-color) 0%, #8b5cf6 50%, #f43f5e 100%);
+  background: linear-gradient(90deg, #b85c38 0%, #8d3f1f 50%, #a67b5b 100%);
   transform: scaleX(0);
   transition: transform 0.4s ease;
   transform-origin: left;
@@ -2160,7 +1834,7 @@ onUnmounted(() => {
   justify-content: center;
   padding: 12px 0;
   cursor: pointer;
-  color: #409eff;
+  color: #b85c38;
   transition: all 0.2s ease;
 }
 
@@ -2169,7 +1843,7 @@ onUnmounted(() => {
 }
 
 .plan-float-collapsed-trigger:hover {
-  background: rgba(64, 158, 255, 0.1);
+  background: rgba(184, 92, 56, 0.1);
 }
 
 .plan-float-collapsed-label {
@@ -2199,7 +1873,7 @@ onUnmounted(() => {
 .plan-float-header p {
   margin: 0;
   font-size: 12px;
-  color: #409eff;
+  color: #b85c38;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -2248,7 +1922,7 @@ onUnmounted(() => {
 
 .plan-float-status {
   font-size: 16px;
-  color: #409eff;
+  color: #b85c38;
   flex-shrink: 0;
 }
 

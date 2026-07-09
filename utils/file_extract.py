@@ -17,6 +17,7 @@ def _configure_tesseract_binary(pytesseract_module) -> None:
         return
 
     candidates = [
+        Path("F:/Tesseract-OCR/tesseract.exe"),
         Path("C:/Program Files/Tesseract-OCR/tesseract.exe"),
         Path("C:/Program Files (x86)/Tesseract-OCR/tesseract.exe"),
         Path.home() / "AppData/Local/Programs/Tesseract-OCR/tesseract.exe",
@@ -62,7 +63,7 @@ def _extract_from_docx(file_bytes: bytes) -> str:
 def _extract_from_image(file_bytes: bytes) -> str:
     try:
         import pytesseract
-        from PIL import Image, ImageSequence
+        from PIL import Image, ImageSequence, ImageEnhance
     except Exception as exc:  # pragma: no cover
         raise HTTPException(status_code=500, detail="服务器未安装图片 OCR 依赖 Pillow 或 pytesseract") from exc
 
@@ -71,9 +72,28 @@ def _extract_from_image(file_bytes: bytes) -> str:
         image = Image.open(BytesIO(file_bytes))
         if getattr(image, "is_animated", False):
             image = next(ImageSequence.Iterator(image))
+        
         if image.mode not in {"L", "RGB"}:
             image = image.convert("RGB")
-        text = pytesseract.image_to_string(image, lang="chi_sim+eng")
+        
+        width, height = image.size
+        if width < 800 or height < 600:
+            scale = max(800 / width, 600 / height)
+            image = image.resize((int(width * scale), int(height * scale)), Image.Resampling.LANCZOS)
+        
+        enhancer = ImageEnhance.Contrast(image)
+        image = enhancer.enhance(1.5)
+        
+        enhancer = ImageEnhance.Sharpness(image)
+        image = enhancer.enhance(2.0)
+        
+        gray = image.convert("L")
+        threshold = 128
+        binary = gray.point(lambda x: 0 if x < threshold else 255, '1')
+        
+        custom_config = r'--oem 3 --psm 6 -c tessedit_char_whitelist=0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz一乙二三四五六七八九十百千万亿零壹贰叁肆伍陆柒捌玖拾佰仟万亿〇、，。？！：；“”‘’（）【】《》〈〉·…—━─│\|—－－～～々※∞★☆●○◎◇◆□■△▲▼▽⊿◢◣◤◥☉⊕⊙⊿◈◇†‡◊·▪▫▬▭▮▯▰▱▲△▴▵▶▷▸▹►▻▼▽▾▿◀◁◂◃◄◅◢◣◤◥◬◭◮◯◰◱◲◳◴◵◶◷◸◹◺◻◼◽◾◿☺☻☹☺☻☹'
+        
+        text = pytesseract.image_to_string(binary, lang="chi_sim+eng", config=custom_config)
     except Exception as exc:
         raise HTTPException(
             status_code=400,
@@ -99,6 +119,8 @@ def extract_text_from_file(filename: str, file_bytes: bytes) -> str:
         )
 
     if not text.strip():
+        if suffix in IMAGE_EXTENSIONS:
+            raise HTTPException(status_code=400, detail="图片解析成功，但未识别到文本内容。请尝试使用 AI 兜底解析功能，或确保图片中的文字清晰可读。")
         raise HTTPException(status_code=400, detail="文件解析成功，但未提取到文本内容")
     return text
 

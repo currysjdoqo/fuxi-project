@@ -547,21 +547,23 @@ onMounted(async () => {
 
 <style scoped>
 .app-layout {
+  --sidebar-width: clamp(220px, 18vw, 256px);
   display: flex;
   min-height: 100vh;
+  background: linear-gradient(135deg, rgba(184, 92, 56, 0.08) 0%, rgba(184, 92, 56, 0.04) 50%, rgba(139, 63, 31, 0.06) 100%);
 }
 
 .sidebar {
-  width: 240px;
-  background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
-  color: white;
+  width: var(--sidebar-width);
+  background: linear-gradient(180deg, #3d2f24 0%, #2c2416 100%);
+  color: #f8f4ec;
   display: flex;
   flex-direction: column;
-  position: fixed;
-  height: 100vh;
-  left: 0;
-  top: 0;
+  position: relative;
+  flex: 0 0 var(--sidebar-width);
+  min-height: 100vh;
   z-index: 100;
+  overflow: hidden;
 }
 
 .logo-section {
@@ -572,7 +574,7 @@ onMounted(async () => {
 .logo-section .logo-icon {
   width: 40px;
   height: 40px;
-  color: #3b82f6;
+  color: #b85c38;
   margin-bottom: 12px;
 }
 
@@ -597,16 +599,16 @@ onMounted(async () => {
   cursor: pointer;
   transition: all 0.2s ease;
   margin-bottom: 4px;
-  color: #94a3b8;
+  color: #a89985;
 }
 
 .nav-item:hover {
-  background: rgba(59, 130, 246, 0.1);
-  color: #e2e8f0;
+  background: rgba(184, 92, 56, 0.1);
+  color: #f8f4ec;
 }
 
 .nav-item.active {
-  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  background: linear-gradient(135deg, #b85c38 0%, #8d3f1f 100%);
   color: white;
 }
 
@@ -648,20 +650,20 @@ onMounted(async () => {
 
 .logout-btn {
   font-size: 12px;
-  color: #94a3b8;
+  color: #a89985;
   cursor: pointer;
   transition: color 0.2s ease;
 }
 
 .logout-btn:hover {
-  color: #ef4444;
+  color: #e8dfd0;
 }
 
 .main-content {
   flex: 1;
-  margin-left: 240px;
+  position: relative;
+  min-width: 0;
   min-height: 100vh;
-  background: linear-gradient(180deg, #f0f9ff 0%, #fafafa 100%);
 }
 
 .import-page {
@@ -736,7 +738,7 @@ onMounted(async () => {
 
 .format-icon {
   font-size: 24px;
-  color: #3b82f6;
+  color: #b85c38;
 }
 
 .format-item div {

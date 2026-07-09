@@ -177,6 +177,18 @@ export const getQuestions = async (skip = 0, limit = 100, subjectId = null, ques
   return response.data
 }
 
+export const getQuestionsSummary = async (subjectId = null, questionType = 'all', importantOnly = false) => {
+  const response = await api.get('/questions/summary', {
+    params: { subject_id: subjectId, question_type: questionType, important_only: importantOnly }
+  })
+  return response.data
+}
+
+export const getQuestionDetail = async (questionId) => {
+  const response = await api.get(`/questions/${questionId}/detail`)
+  return response.data
+}
+
 export const deleteQuestion = async (questionId) => {
   const response = await api.delete(`/questions/${questionId}`)
   return response.data

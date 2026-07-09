@@ -1070,26 +1070,29 @@ onUnmounted(() => {
 
 <style scoped>
 .app-layout {
+  --sidebar-width: clamp(220px, 18vw, 256px);
   display: flex;
   min-height: 100vh;
+  background: linear-gradient(135deg, rgba(184, 92, 56, 0.08) 0%, rgba(184, 92, 56, 0.04) 50%, rgba(139, 63, 31, 0.06) 100%);
 }
 
 .sidebar {
-  width: 240px;
-  background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
-  color: white;
+  width: var(--sidebar-width);
+  background: linear-gradient(180deg, #3d2f24 0%, #2c2416 100%);
+  color: #f8f4ec;
   display: flex;
   flex-direction: column;
-  position: fixed;
-  height: 100vh;
-  left: 0;
-  top: 0;
+  position: relative;
+  flex: 0 0 var(--sidebar-width);
+  min-height: 100vh;
   z-index: 100;
-  transition: transform 0.3s ease;
+  overflow: hidden;
 }
 
 .sidebar.collapsed {
-  transform: translateX(-240px);
+  width: 0;
+  flex-basis: 0;
+  opacity: 0;
 }
 
 .sidebar.open {
@@ -1112,7 +1115,7 @@ onUnmounted(() => {
 
 .logo-icon {
   font-size: 32px;
-  color: #3b82f6;
+  color: #b85c38;
 }
 
 .logo-copy h2 {
@@ -1124,7 +1127,7 @@ onUnmounted(() => {
 
 .logo-copy span {
   font-size: 11px;
-  color: #94a3b8;
+  color: #a89985;
   display: block;
 }
 
@@ -1136,7 +1139,7 @@ onUnmounted(() => {
 
 .nav-section-title {
   font-size: 11px;
-  color: #64748b;
+  color: #8b7b65;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -1153,16 +1156,16 @@ onUnmounted(() => {
   cursor: pointer;
   transition: all 0.2s ease;
   margin-bottom: 4px;
-  color: #94a3b8;
+  color: #a89985;
 }
 
 .nav-item:hover {
-  background: rgba(59, 130, 246, 0.1);
-  color: #e2e8f0;
+  background: rgba(184, 92, 56, 0.1);
+  color: #f8f4ec;
 }
 
 .nav-item.active {
-  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  background: linear-gradient(135deg, #b85c38 0%, #8d3f1f 100%);
   color: white;
 }
 
@@ -1177,8 +1180,8 @@ onUnmounted(() => {
 
 .user-section {
   padding: 20px;
-  border-top: 1px solid var(--border-color);
-  background: #f8fafc;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(184, 92, 56, 0.05);
 }
 
 .user-info {
@@ -1187,14 +1190,13 @@ onUnmounted(() => {
   gap: 14px;
   padding: 12px;
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.98);
-  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 20px rgba(44, 36, 22, 0.1);
   transition: box-shadow 0.25s ease, transform 0.25s ease;
 }
 
 .user-info:hover {
-  box-shadow: 0 14px 28px rgba(15, 23, 42, 0.12);
-  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.12);
 }
 
 .avatar {
@@ -1207,8 +1209,8 @@ onUnmounted(() => {
   font-size: 16px;
   font-weight: 700;
   color: #fff;
-  background: linear-gradient(135deg, #2563eb 0%, #ef4444 100%);
-  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.28);
+  background: linear-gradient(135deg, #b85c38 0%, #8d3f1f 100%);
+  box-shadow: 0 4px 12px rgba(184, 92, 56, 0.3);
   cursor: pointer;
   flex-shrink: 0;
 }
@@ -1224,12 +1226,12 @@ onUnmounted(() => {
 .username {
   font-weight: 600;
   font-size: 15px;
-  color: #0f172a;
+  color: #f8f4ec;
 }
 
 .logout-btn {
   font-size: 13px;
-  color: #64748b;
+  color: #a89985;
   cursor: pointer;
   transition: color 0.2s ease, background 0.2s ease;
   border-radius: 8px;
@@ -1238,8 +1240,8 @@ onUnmounted(() => {
 }
 
 .logout-btn:hover {
-  color: #dc2626;
-  background: rgba(239, 68, 68, 0.08);
+  color: #e8dfd0;
+  background: rgba(166, 52, 52, 0.2);
 }
 
 .main-content {
@@ -1257,21 +1259,21 @@ onUnmounted(() => {
   z-index: 110;
   width: 36px;
   height: 36px;
-  border: 1px solid #dbeafe;
+  border: 1px solid rgba(184, 92, 56, 0.2);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.96);
-  color: #1d4ed8;
+  color: #b85c38;
   font-size: 18px;
   line-height: 1;
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
+  box-shadow: 0 10px 24px rgba(44, 36, 22, 0.12);
   cursor: pointer;
   transition: left 0.25s ease, background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .desktop-sidebar-handle:hover {
-  background: #1d4ed8;
+  background: #b85c38;
   color: #fff;
-  box-shadow: 0 14px 28px rgba(29, 78, 216, 0.2);
+  box-shadow: 0 14px 28px rgba(184, 92, 56, 0.3);
 }
 
 .desktop-sidebar-handle.collapsed {
@@ -1314,8 +1316,8 @@ onUnmounted(() => {
   min-width: 0;
   padding: 8px 12px;
   border-radius: 999px;
-  background: #eff6ff;
-  color: #1d4ed8;
+  background: rgba(184, 92, 56, 0.1);
+  color: #b85c38;
   font-size: 13px;
 }
 
@@ -1366,8 +1368,8 @@ onUnmounted(() => {
 
 .subject-card {
   min-height: 220px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(248, 250, 252, 0.94) 100%);
-  border: 1px solid #dbe3ef;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(248, 244, 236, 0.94) 100%);
+  border: 1px solid #e8dfd0;
   border-radius: 18px;
   padding: 22px;
   cursor: pointer;
@@ -1377,7 +1379,7 @@ onUnmounted(() => {
   gap: 14px;
   position: relative;
   overflow: hidden;
-  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.05);
+  box-shadow: 0 10px 30px rgba(44, 36, 22, 0.05);
 }
 
 .subject-card::before {
@@ -1386,24 +1388,24 @@ onUnmounted(() => {
   inset: 0 auto auto 0;
   width: 100%;
   height: 4px;
-  background: linear-gradient(90deg, #2563eb 0%, #38bdf8 52%, #22c55e 100%);
+  background: linear-gradient(90deg, #b85c38 0%, #8d3f1f 52%, #5c8a35 100%);
 }
 
 .subject-card:hover {
   transform: translateY(-4px);
-  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.12);
-  border-color: #93c5fd;
+  box-shadow: 0 18px 40px rgba(44, 36, 22, 0.12);
+  border-color: #b85c38;
 }
 
 .subject-icon {
   width: 56px;
   height: 56px;
   border-radius: 16px;
-  background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
+  background: linear-gradient(135deg, rgba(184, 92, 56, 0.15) 0%, rgba(184, 92, 56, 0.08) 100%);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #1d4ed8;
+  color: #b85c38;
   font-size: 28px;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
 }
@@ -1470,19 +1472,19 @@ onUnmounted(() => {
 .sidebar-stats {
   background: rgba(255, 255, 255, 0.92);
   backdrop-filter: blur(12px);
-  border: 1px solid #dbe3ef;
+  border: 1px solid #e8dfd0;
   border-radius: 18px;
   padding: 16px;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 10px;
-  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 10px 28px rgba(44, 36, 22, 0.08);
 }
 
 .stat-item {
   text-align: center;
   padding: 10px 8px;
-  background: linear-gradient(180deg, #f8fbff 0%, #eef4ff 100%);
+  background: linear-gradient(180deg, #f8f4ec 0%, #e8dfd0 100%);
   border-radius: 12px;
 }
 
@@ -1530,13 +1532,13 @@ onUnmounted(() => {
 }
 
 .question-dot:hover {
-  border-color: #3b82f6;
-  color: #3b82f6;
+  border-color: #b85c38;
+  color: #b85c38;
 }
 
 .question-dot.active {
-  border-color: #3b82f6;
-  background: #3b82f6;
+  border-color: #b85c38;
+  background: #b85c38;
   color: white;
 }
 
@@ -1577,10 +1579,10 @@ onUnmounted(() => {
   width: 100%;
   background: rgba(255, 255, 255, 0.96);
   backdrop-filter: blur(12px);
-  border: 1px solid #dbe3ef;
+  border: 1px solid #e8dfd0;
   border-radius: 22px;
   padding: clamp(20px, 2vw, 28px);
-  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 16px 40px rgba(44, 36, 22, 0.08);
 }
 
 .question-header {
@@ -1604,38 +1606,38 @@ onUnmounted(() => {
 }
 
 .question-type-badge.type-single {
-  background: #dbeafe;
-  color: #1e40af;
+  background: rgba(184, 92, 56, 0.12);
+  color: #8d3f1f;
 }
 
 .question-type-badge.type-multi {
-  background: #fce7f3;
-  color: #9d174d;
+  background: rgba(166, 52, 52, 0.12);
+  color: #8b2a2a;
 }
 
 .question-type-badge.type-judge {
-  background: #fef3c7;
-  color: #92400e;
+  background: rgba(184, 134, 11, 0.12);
+  color: #8b6914;
 }
 
 .question-type-badge.type-fill {
-  background: #e0f2fe;
-  color: #075985;
+  background: rgba(61, 122, 138, 0.12);
+  color: #2a5a68;
 }
 
 .question-type-badge.type-short {
-  background: #dcfce7;
-  color: #166534;
+  background: rgba(92, 138, 53, 0.12);
+  color: #3d5f24;
 }
 
 .question-type-badge.type-code {
-  background: #f3e8ff;
-  color: #6b21a8;
+  background: rgba(139, 63, 31, 0.12);
+  color: #6b3f1f;
 }
 
 .question-text {
   padding: 18px;
-  background: linear-gradient(180deg, #f8fbff 0%, #f8fafc 100%);
+  background: linear-gradient(180deg, #f8f4ec 0%, #f0ebe0 100%);
   border-radius: 14px;
   font-size: 18px;
   line-height: 1.8;
@@ -1652,7 +1654,7 @@ onUnmounted(() => {
 
 .option-item {
   padding: 14px 16px;
-  border: 1px solid #dbe3ef;
+  border: 1px solid #e8dfd0;
   border-radius: 14px;
   transition: all 0.2s ease;
   cursor: pointer;
@@ -1660,12 +1662,12 @@ onUnmounted(() => {
 }
 
 .option-item:hover {
-  border-color: #c0c4cc;
+  border-color: #d4c8b4;
 }
 
 .option-item.selected {
-  border-color: #3b82f6;
-  background: #f0f9ff;
+  border-color: #b85c38;
+  background: rgba(184, 92, 56, 0.08);
 }
 
 .option-item.correct {
@@ -1750,7 +1752,11 @@ onUnmounted(() => {
 
 @media (max-width: 768px) {
   .sidebar {
-    transform: translateX(-240px);
+    position: fixed;
+    left: 0;
+    top: 0;
+    height: 100vh;
+    transform: translateX(-100%);
   }
 
   .sidebar.open {
@@ -1820,26 +1826,26 @@ onUnmounted(() => {
 
 .explanation-content :deep(h2) {
   font-size: 15px;
-  color: #2563eb;
+  color: #8d3f1f;
   margin: 12px 0 6px;
   padding-bottom: 4px;
-  border-bottom: 1px solid #bfdbfe;
+  border-bottom: 1px solid #e8dfd0;
 }
 
 .explanation-content :deep(h3) {
   font-size: 14px;
-  color: #3b82f6;
+  color: #b85c38;
   margin: 10px 0 4px;
 }
 
 .explanation-content :deep(strong) {
-  color: #dc2626;
+  color: #a63434;
 }
 
 .explanation-box {
   margin-top: 20px;
   padding: 16px;
-  background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+  background: linear-gradient(135deg, #f8f4ec 0%, #e8dfd0 100%);
   border: 1px solid #fbbf24;
   border-radius: 8px;
 }

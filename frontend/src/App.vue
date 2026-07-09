@@ -15,11 +15,13 @@
 
 <style>
 :root {
-  --primary-color: #3b82f6;
-  --success-color: #22c55e;
-  --warning-color: #f59e0b;
-  --danger-color: #ef4444;
-  --info-color: #06b6d4;
+  --primary-color: #b85c38;
+  --primary-dark: #8d3f1f;
+  --primary-soft: rgba(184, 92, 56, 0.12);
+  --success-color: #5c8a35;
+  --warning-color: #b8860b;
+  --danger-color: #a63434;
+  --info-color: #3d7a8a;
 }
 
 * {
@@ -31,8 +33,8 @@
 body {
   font-family: 'Avenir Next', 'PingFang SC', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
   font-size: 14px;
-  color: #1e293b;
-  background-color: #f5f7fa;
+  color: #2c2416;
+  background-color: #f4efe6;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   overflow-x: hidden;
@@ -69,7 +71,7 @@ body {
   flex-direction: column;
   overflow: hidden;
   color: #fff;
-  background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
+  background: linear-gradient(180deg, #3d2f24 0%, #2c2416 100%);
   transition: width 0.25s ease, flex-basis 0.25s ease, transform 0.25s ease, opacity 0.2s ease;
 }
 
@@ -89,7 +91,7 @@ body {
 
 .app-sidebar-logo-icon {
   font-size: 40px;
-  color: #3b82f6;
+  color: #b85c38;
 }
 
 .app-sidebar-logo-copy {
@@ -142,12 +144,12 @@ body {
 }
 
 .app-sidebar-nav-item:hover {
-  background: rgba(59, 130, 246, 0.1);
+  background: rgba(184, 92, 56, 0.1);
   color: #e2e8f0;
 }
 
 .app-sidebar-nav-item.active {
-  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  background: linear-gradient(135deg, #b85c38 0%, #8d3f1f 100%);
   color: #fff;
 }
 
@@ -180,7 +182,7 @@ body {
   align-items: center;
   justify-content: center;
   color: #e2e8f0;
-  background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+  background: linear-gradient(135deg, #b85c38 0%, #8d3f1f 100%);
 }
 
 .app-sidebar-user-details {
@@ -211,19 +213,19 @@ body {
   z-index: 110;
   width: 36px;
   height: 36px;
-  border: 1px solid #dbeafe;
+  border: 1px solid rgba(184, 92, 56, 0.2);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.96);
-  color: #1d4ed8;
+  color: #b85c38;
   font-size: 18px;
   line-height: 1;
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
+  box-shadow: 0 10px 24px rgba(44, 36, 22, 0.12);
   cursor: pointer;
   transition: left 0.25s ease, background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .desktop-sidebar-handle:hover {
-  background: #1d4ed8;
+  background: #b85c38;
   color: #fff;
 }
 
