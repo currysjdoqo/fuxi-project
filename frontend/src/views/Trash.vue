@@ -69,9 +69,8 @@
           v-model:visible="showProfileModal"
           :username="username"
         />
-      </div>
     </div>
-  </div>
+  </Layout>
 </template>
 
 <script setup>

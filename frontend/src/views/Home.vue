@@ -1,17 +1,63 @@
 <template>
-  <Layout :username="username" :avatar="avatar" @show-profile="showProfileModal = true" @logout="handleLogout">
-    <template #nav-items>
-      <div
-        v-for="item in navItems"
-        :key="item.path"
-        class="nav-item"
-        :class="{ active: route.path === item.path }"
-        @click="goToPath(item.path)"
-      >
-        <el-icon><component :is="item.icon" /></el-icon>
-        <span>{{ item.label }}</span>
+  <div class="app-layout" :class="{ 'sidebar-collapsed': sidebarCollapsed, 'mobile-nav-open': mobileNavOpen }">
+    <div v-if="mobileNavOpen" class="mobile-nav-mask" @click="closeMobileNav"></div>
+    <nav class="sidebar" :class="{ collapsed: sidebarCollapsed, open: mobileNavOpen }">
+      <div class="logo-section">
+        <div class="logo-group">
+          <el-icon class="logo-icon"><Document /></el-icon>
+          <div class="logo-copy">
+            <h2>习题管理系统</h2>
+            <span>Practice Workspace</span>
+          </div>
+        </div>
+        <el-button
+          v-if="isMobileNav"
+          circle
+          text
+          class="sidebar-toggle mobile-close"
+          :icon="Close"
+          @click="closeMobileNav"
+        />
       </div>
-    </template>
+
+      <div class="nav-menu">
+        <div class="nav-section-title">功能导航</div>
+        <div
+          v-for="item in navItems"
+          :key="item.path"
+          class="nav-item"
+          :class="{ active: route.path === item.path }"
+          @click="goToPath(item.path)"
+        >
+          <el-icon><component :is="item.icon" /></el-icon>
+          <span>{{ item.label }}</span>
+        </div>
+      </div>
+
+      <div class="user-section">
+        <div class="user-info">
+          <div class="avatar" :style="{ background: avatar ? `url(${avatar}) center/cover` : undefined }" @click="showProfileModal = true">
+            <template v-if="!avatar">{{ username.charAt(0).toUpperCase() }}</template>
+          </div>
+          <div class="user-details">
+            <span class="username">{{ username }}</span>
+            <span class="logout-btn" @click="handleLogout">退出登录</span>
+          </div>
+        </div>
+      </div>
+    </nav>
+
+    <div class="main-content">
+      <button
+        v-if="!isMobileNav"
+        type="button"
+        class="desktop-sidebar-handle"
+        :class="{ collapsed: sidebarCollapsed }"
+        :aria-label="sidebarCollapsed ? '展开导航栏' : '隐藏导航栏'"
+        @click="toggleSidebar"
+      >
+        {{ sidebarCollapsed ? '>' : '<' }}
+      </button>
       <div class="practice-page">
         <header class="page-header">
           <div class="header-main">
@@ -22,7 +68,7 @@
                 text
                 class="header-nav-btn"
                 :icon="Menu"
-                @click="toggleMobileNav()"
+                @click="toggleMobileNav"
               />
               <div v-if="selectedSubject" class="subject-chip">
                 <el-icon><Document /></el-icon>
@@ -49,67 +95,6 @@
         </header>
 
         <main v-if="!selectedSubject" class="subject-page">
-          <transition name="plan-float">
-            <aside 
-              v-if="showPlanFloat" 
-              class="plan-float" 
-              :class="{ collapsed: planFloatCollapsed }"
-              :style="planFloatStyle"
-            >
-              <div v-if="planFloatCollapsed" class="plan-float-collapsed-trigger" @click="togglePlanFloat">
-                <el-icon><List /></el-icon>
-                <span class="plan-float-collapsed-label">计划</span>
-              </div>
-              
-              <div v-else class="plan-float-content">
-                <div class="plan-float-header" @pointerdown="startPlanFloatDrag">
-                  <div>
-                    <p>今日学习计划</p>
-                    <h3>{{ formatPlanDate(todayPlanDate) }}</h3>
-                  </div>
-                  <div class="plan-float-actions">
-                    <el-button
-                      link
-                      :icon="planPanelCollapsed ? ArrowRight : ArrowLeft"
-                      @pointerdown.stop
-                      @click="planPanelCollapsed = !planPanelCollapsed"
-                    />
-                    <el-button
-                      link
-                      :icon="ArrowRight"
-                      @pointerdown.stop
-                      @click="togglePlanFloat"
-                      title="收起"
-                    />
-                  </div>
-                </div>
-
-                <div v-if="!planPanelCollapsed" class="plan-float-body">
-                  <el-skeleton v-if="planLoading" :rows="3" animated />
-                  <template v-else>
-                    <div v-if="todayPlanItems.length" class="plan-float-list">
-                      <div
-                        v-for="item in todayPlanItems"
-                        :key="item.id"
-                        class="plan-float-item"
-                        :class="{ completed: item.completed === 1 }"
-                        @click="completePlanItem(item)"
-                      >
-                        <el-icon class="plan-float-status">
-                          <CircleCheck v-if="item.completed === 1" />
-                          <CircleClose v-else />
-                        </el-icon>
-                        <span>{{ item.content }}</span>
-                        <span class="plan-float-hint">点击完成</span>
-                      </div>
-                    </div>
-                    <el-empty v-else description="今天还没有学习计划" :image-size="80" />
-                  </template>
-                </div>
-              </div>
-            </aside>
-          </transition>
-
           <section class="create-subject">
             <el-input v-model="newSubjectName" placeholder="例如：机器学习" @keyup.enter="handleCreateSubject" />
             <el-button type="primary" :icon="Plus" :loading="subjectCreating" @click="handleCreateSubject">创建科目</el-button>
@@ -527,7 +512,7 @@ import {
 } from '@element-plus/icons-vue'
 import ExportDialog from '../components/ExportDialog.vue'
 import ProfileModal from '../components/ProfileModal.vue'
-import Layout from '../components/Layout/Layout.vue'
+import { useSidebarLayout } from '../composables/useSidebarLayout'
 import { useUser } from '../composables/useUser'
 import { clearAuthSession } from '../utils/authStorage'
 import {
@@ -555,6 +540,7 @@ import { getErrorMessage } from '../utils/errorHandler'
 const route = useRoute()
 const router = useRouter()
 const { username, avatar, loadUserInfo } = useUser()
+const { sidebarCollapsed, mobileNavOpen, isMobileNav, toggleSidebar, toggleMobileNav, closeMobileNav } = useSidebarLayout()
 const showProfileModal = ref(false)
 const userAvatar = ref(null)
 const navItems = [
@@ -607,7 +593,6 @@ const practiceMode = ref('sequential')
 const practiceQuestionCount = ref(20)
 const practiceStartIndex = ref(1)
 const practiceEndIndex = ref(20)
-const viewportWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1280)
 const exportDialogVisible = ref(false)
 
 const goToPath = (path) => {
@@ -636,7 +621,6 @@ const formatPlanDate = (dateStr) => {
 }
 
 const showPlanFloat = computed(() => !selectedSubject.value)
-const isMobileNav = computed(() => viewportWidth.value <= 768)
 const planFloatStyle = computed(() => ({
   left: `${planFloatPosition.value.left}px`,
   top: `${planFloatPosition.value.top}px`

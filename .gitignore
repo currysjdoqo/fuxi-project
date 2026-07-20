@@ -26,6 +26,7 @@ build/
 
 # Uploads
 uploads/
+data/
 
 # IDE
 .vscode/
@@ -56,3 +57,7 @@ codex/
 
 # Personal files
 开机启动.txt
+home_old.txt
+
+# Deploy package
+fuxi-deploy.zip

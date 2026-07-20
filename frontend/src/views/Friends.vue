@@ -840,7 +840,7 @@ watch(showShareDialog, (visible) => {
 
 onMounted(async () => {
   previousSidebarState.value = sidebarCollapsed.value
-  sidebarCollapsed.value = true
+  sidebarCollapsed.value = false
   closeMobileNav()
   await loadUserInfo()
   currentUserId.value = Number(getAuthUserId()) || currentUserId.value
@@ -870,10 +870,11 @@ onBeforeUnmount(() => {
 }
 
 .friends-page {
-  height: 100vh;
+  min-height: 100vh;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .page-header {
@@ -938,20 +939,23 @@ onBeforeUnmount(() => {
   flex: 1;
   min-height: 0;
   display: flex;
+  align-items: stretch;
   gap: 20px;
   padding: 20px 28px 28px;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .friends-sidebar {
   flex: 0 0 auto;
   width: min(360px, 40vw);
   min-width: 300px;
+  min-height: 0;
 }
 
 .chat-stage {
   flex: 1;
   min-width: 0;
+  min-height: 0;
 }
 
 .friends-sidebar,
@@ -1067,6 +1071,7 @@ onBeforeUnmount(() => {
 
 .sidebar-scroll {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 0 22px 22px;
 }
@@ -1385,7 +1390,10 @@ onBeforeUnmount(() => {
   .friends-sidebar {
     width: 100%;
     min-width: auto;
-    max-height: 300px;
+    max-height: none;
+  }
+  .chat-stage {
+    min-height: 520px;
   }
 }
 
@@ -1428,6 +1436,10 @@ onBeforeUnmount(() => {
     flex-direction: row;
     justify-content: space-between;
     align-items: center;
+  }
+
+  .chat-stage {
+    min-height: 440px;
   }
 
   .message-bubble {

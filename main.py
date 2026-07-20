@@ -41,7 +41,17 @@ allowed_origins = [
 
 if not allowed_origins:
     import logging
-    logging.warning("ALLOWED_ORIGINS environment variable is empty or not set. All cross-origin requests will be blocked.")
+    allowed_origins = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:4173",
+        "http://127.0.0.1:4173",
+    ]
+    logging.warning(
+        "ALLOWED_ORIGINS environment variable is empty or not set. "
+        "Falling back to local development origins: %s",
+        ", ".join(allowed_origins),
+    )
 
 app.add_middleware(
     CORSMiddleware,

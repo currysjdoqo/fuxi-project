@@ -258,6 +258,153 @@ body {
   opacity: 0 !important;
 }
 
+.sidebar.open {
+  transform: translateX(0);
+}
+
+.logo-group {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.logo-copy {
+  min-width: 0;
+}
+
+.logo-copy h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.logo-copy span {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: #94a3b8;
+}
+
+.logo-icon {
+  font-size: 40px;
+  color: #b85c38;
+  flex-shrink: 0;
+}
+
+.mobile-close {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .mobile-close {
+    display: flex;
+  }
+}
+
+.nav-section-title {
+  padding: 0 16px 10px;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.logo-section {
+  padding: 28px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.nav-menu {
+  flex: 1;
+  padding: 16px 12px;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-bottom: 4px;
+  color: #a89985;
+}
+
+.nav-item:hover {
+  background: rgba(184, 92, 56, 0.1);
+  color: #f8f4ec;
+}
+
+.nav-item.active {
+  background: linear-gradient(135deg, #b85c38 0%, #8d3f1f 100%);
+  color: white;
+}
+
+.user-section {
+  padding: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+}
+
+.avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 600;
+  color: #f8f4ec;
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+}
+
+.user-info:hover .avatar {
+  transform: scale(1.05);
+}
+
+.user-details {
+  min-width: 0;
+}
+
+.username {
+  display: block;
+  font-weight: 600;
+  font-size: 15px;
+  color: #f8f4ec;
+}
+
+.logout-btn {
+  display: block;
+  font-size: 12px;
+  color: #a89985;
+  margin-top: 2px;
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.logout-btn:hover {
+  color: #e8dfd0;
+  background: rgba(166, 52, 52, 0.2);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
 .fade-enter-active,
 .fade-leave-active {
   transition: opacity 0.3s ease;
