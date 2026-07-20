@@ -12,13 +12,15 @@ from database import get_db
 from models import Question, Subject, User
 from routers.subjects import get_or_create_default_subject
 from utils.answer_normalizer import normalize_question_type, normalize_standard_answer
+from utils.ai_access import get_effective_deepseek_api_key, get_user_deepseek_api_key
+from utils.billing import consume_keepseek_use
 from utils.ai_import import extract_text_for_ai_fallback, parse_image_with_ai, parse_questions_with_ai
 from utils.file_extract import IMAGE_EXTENSIONS, TEXT_EXTRACT_EXTENSIONS, extract_text_from_file, extract_zip_file, save_uploaded_file
 from utils.import_template import generate_excel_template
 from utils.parser import parse_exercise_text, parse_file
 
 router = APIRouter()
-UPLOAD_DIR = Path("uploads")
+UPLOAD_DIR = Path("private_uploads")
 
 
 class ParsedQuestion(BaseModel):
@@ -199,9 +201,17 @@ def parse_questions(request: ParseRequest):
 @router.post("/import/ai-parse", response_model=AiParseResponse)
 async def ai_parse_questions(
     request: AiParseRequest,
+    db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    questions, errors = await parse_questions_with_ai(request.text, request.source_name)
+    api_key = get_effective_deepseek_api_key(current_user)
+    if current_user.ai_provider == "custom" and not get_user_deepseek_api_key(current_user):
+        raise HTTPException(status_code=400, detail="请先配置个人 DeepSeek API Key")
+    if current_user.ai_provider != "custom":
+        quota_result = consume_keepseek_use(db, current_user, "ai_import_parse", allow_credits=False)
+        if not quota_result["allowed"]:
+            raise HTTPException(status_code=402, detail=quota_result)
+    questions, errors = await parse_questions_with_ai(request.text, request.source_name, api_key=api_key)
     return {
         "parsed_questions": [ParsedQuestion(**q) for q in questions],
         "errors": errors,
@@ -212,6 +222,7 @@ async def ai_parse_questions(
 @router.post("/import/ai-parse-file", response_model=ParseFileResponse)
 async def ai_parse_uploaded_file(
     file: UploadFile = File(...),
+    db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     if not file.filename:
@@ -221,12 +232,20 @@ async def ai_parse_uploaded_file(
     if not file_bytes:
         raise HTTPException(status_code=400, detail="上传文件为空")
 
+    api_key = get_effective_deepseek_api_key(current_user)
+    if current_user.ai_provider == "custom" and not get_user_deepseek_api_key(current_user):
+        raise HTTPException(status_code=400, detail="请先配置个人 DeepSeek API Key")
+    if current_user.ai_provider != "custom":
+        quota_result = consume_keepseek_use(db, current_user, "ai_import_file", allow_credits=False)
+        if not quota_result["allowed"]:
+            raise HTTPException(status_code=402, detail=quota_result)
+
     suffix = Path(file.filename).suffix.lower()
     if suffix in IMAGE_EXTENSIONS:
-        questions, errors = await parse_image_with_ai(file_bytes, file.filename)
+        questions, errors = await parse_image_with_ai(file_bytes, file.filename, api_key=api_key)
     else:
         text = extract_text_for_ai_fallback(file.filename, file_bytes)
-        questions, errors = await parse_questions_with_ai(text, file.filename)
+        questions, errors = await parse_questions_with_ai(text, file.filename, api_key=api_key)
 
     return {
         "filename": file.filename,

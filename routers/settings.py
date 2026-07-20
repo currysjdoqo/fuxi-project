@@ -1,6 +1,5 @@
-import json
-import os
 from pathlib import Path
+from os import getenv
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -9,6 +8,14 @@ from sqlalchemy.orm import Session
 from auth import get_current_user, verify_password
 from database import get_db
 from models import PracticeRecord, Question, Subject, User, WrongQuestion
+from utils.ai_access import (
+    clear_user_deepseek_api_key,
+    get_platform_deepseek_api_key,
+    get_user_deepseek_api_key,
+    set_platform_deepseek_api_key,
+    set_user_deepseek_api_key,
+)
+from utils.billing import get_public_account_state
 from utils.crypto import encrypt_api_key, decrypt_api_key
 
 router = APIRouter()
@@ -28,6 +35,10 @@ class WrongThresholdRequest(BaseModel):
 
 class ClearDataRequest(BaseModel):
     password: str
+
+
+class AiProviderRequest(BaseModel):
+    ai_provider: str
 
 
 def _load_env_values() -> dict[str, str]:
@@ -53,16 +64,15 @@ def _write_env_value(key: str, value: str) -> None:
 
 
 def _get_deepseek_api_key() -> str:
-    env_key = os.getenv("DEEPSEEK_API_KEY")
+    env_key = getenv("DEEPSEEK_API_KEY")
     if env_key:
         return decrypt_api_key(env_key)
-    
     loaded_key = _load_env_values().get("DEEPSEEK_API_KEY", "")
     return decrypt_api_key(loaded_key)
 
 
 def get_wrong_question_threshold() -> int:
-    raw_value = os.getenv(WRONG_THRESHOLD_KEY) or _load_env_values().get(
+    raw_value = getenv(WRONG_THRESHOLD_KEY) or _load_env_values().get(
         WRONG_THRESHOLD_KEY,
         str(DEFAULT_WRONG_THRESHOLD),
     )
@@ -79,10 +89,14 @@ def get_wrong_question_threshold() -> int:
 
 
 @router.get("/settings")
-def get_settings(current_user: User = Depends(get_current_user)):
+def get_settings(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    account_state = get_public_account_state(db, current_user)
     return {
         "has_deepseek_api_key": bool(_get_deepseek_api_key()),
+        "ai_provider": current_user.ai_provider or "platform",
+        "has_custom_ai_api_key": bool(get_user_deepseek_api_key(current_user)),
         "wrong_question_remove_threshold": get_wrong_question_threshold(),
+        **account_state,
     }
 
 
@@ -97,8 +111,53 @@ def save_deepseek_key(
 
     encrypted_key = encrypt_api_key(api_key)
     _write_env_value("DEEPSEEK_API_KEY", encrypted_key)
-    os.environ["DEEPSEEK_API_KEY"] = encrypted_key
+    set_platform_deepseek_api_key(api_key)
     return {"message": "DeepSeek API Key 已加密保存"}
+
+
+@router.post("/settings/ai-provider")
+def set_ai_provider(
+    request_body: AiProviderRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    provider = request_body.ai_provider.strip().lower()
+    if provider not in {"platform", "custom"}:
+        raise HTTPException(status_code=400, detail="无效的 AI 来源")
+    if provider == "custom" and not get_user_deepseek_api_key(current_user):
+        raise HTTPException(status_code=400, detail="请先配置个人 DeepSeek API Key")
+
+    current_user.ai_provider = provider
+    db.commit()
+    db.refresh(current_user)
+    return {"message": "AI 来源已更新", "ai_provider": current_user.ai_provider}
+
+
+@router.post("/settings/custom-ai-key")
+def save_custom_ai_key(
+    request_body: ApiKeyRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    api_key = request_body.api_key.strip()
+    if not api_key:
+        raise HTTPException(status_code=400, detail="API Key 不能为空")
+
+    set_user_deepseek_api_key(current_user, api_key)
+    db.commit()
+    db.refresh(current_user)
+    return {"message": "个人 DeepSeek API Key 已保存", "ai_provider": current_user.ai_provider}
+
+
+@router.delete("/settings/custom-ai-key")
+def delete_custom_ai_key(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    clear_user_deepseek_api_key(current_user)
+    db.commit()
+    db.refresh(current_user)
+    return {"message": "个人 DeepSeek API Key 已删除", "ai_provider": current_user.ai_provider}
 
 
 @router.post("/settings/wrong-threshold")
@@ -111,7 +170,6 @@ def save_wrong_threshold(
         raise HTTPException(status_code=400, detail="阈值必须在 1 到 10 之间")
 
     _write_env_value(WRONG_THRESHOLD_KEY, str(threshold))
-    os.environ[WRONG_THRESHOLD_KEY] = str(threshold)
     return {"message": "错题移除阈值已保存", "threshold": threshold}
 
 

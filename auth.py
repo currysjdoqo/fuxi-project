@@ -1,4 +1,5 @@
 import hashlib
+import hmac
 import secrets
 
 from fastapi import Depends, Header, HTTPException
@@ -9,11 +10,30 @@ from models import User
 
 
 def hash_password(password: str) -> str:
-    return hashlib.sha256(password.encode("utf-8")).hexdigest()
+    salt = secrets.token_bytes(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 200000)
+    return f"pbkdf2_sha256$200000${salt.hex()}${digest.hex()}"
 
 
 def verify_password(password: str, password_hash: str) -> bool:
-    return hash_password(password) == password_hash
+    if not password_hash:
+        return False
+
+    if password_hash.startswith("pbkdf2_sha256$"):
+        try:
+            _, iterations, salt_hex, digest_hex = password_hash.split("$", 3)
+            derived = hashlib.pbkdf2_hmac(
+                "sha256",
+                password.encode("utf-8"),
+                bytes.fromhex(salt_hex),
+                int(iterations),
+            )
+            return hmac.compare_digest(derived.hex(), digest_hex)
+        except (ValueError, TypeError):
+            return False
+
+    # 兼容旧版单次 SHA-256 哈希
+    return hashlib.sha256(password.encode("utf-8")).hexdigest() == password_hash
 
 
 def issue_token() -> str:

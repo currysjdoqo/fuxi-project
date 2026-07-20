@@ -12,6 +12,7 @@ load_dotenv()
 from routers.auth import router as auth_router
 from routers.export import router as export_router
 from routers.ai import router as ai_router
+from routers.billing import router as billing_router
 from routers.import_router import router as import_router
 from routers.plan import router as plan_router
 from routers.practice import router as practice_router
@@ -72,13 +73,14 @@ app.include_router(trash_router, prefix="/api")
 app.include_router(plan_router, prefix="/api")
 app.include_router(export_router, prefix="/api")
 app.include_router(ai_router, prefix="/api")
+app.include_router(billing_router, prefix="/api")
 app.include_router(friends_router, prefix="/api")
 app.include_router(messages_router, prefix="/api")
 app.include_router(share_router, prefix="/api")
 app.include_router(realtime_router)
 
-Path("uploads").mkdir(exist_ok=True)
-app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+Path("uploads/avatars").mkdir(parents=True, exist_ok=True)
+app.mount("/uploads/avatars", StaticFiles(directory="uploads/avatars"), name="avatars")
 
 
 @app.get("/health")

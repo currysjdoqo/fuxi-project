@@ -15,6 +15,16 @@ class User(Base):
     avatar = Column(String, nullable=True)
     signature = Column(String, nullable=True)
     user_code = Column(String(10), unique=True, index=True, nullable=True)
+    invite_code = Column(String(16), unique=True, index=True, nullable=True)
+    invited_by_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=True)
+    ai_provider = Column(String, default="platform")
+    custom_ai_api_key_encrypted = Column(String, nullable=True)
+    balance_cents = Column(Integer, default=0)
+    call_credits = Column(Integer, default=0)
+    member_expires_at = Column(DateTime, nullable=True)
+    member_calls_remaining = Column(Integer, default=0)
+    free_calls_used = Column(Integer, default=0)
+    free_calls_date = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -114,4 +124,26 @@ class ShareRecord(Base):
     from_user_id = Column(Integer, ForeignKey("users.id"), index=True)
     to_user_id = Column(Integer, ForeignKey("users.id"), index=True)
     accepted = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class WalletTransaction(Base):
+    __tablename__ = "wallet_transactions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    source_user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=True)
+    amount_cents = Column(Integer, nullable=False)
+    tx_type = Column(String, nullable=False)
+    note = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class KeepSeekUsage(Base):
+    __tablename__ = "keepseek_usage"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    source = Column(String, nullable=False)
+    cost_type = Column(String, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)

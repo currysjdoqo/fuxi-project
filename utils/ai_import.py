@@ -7,7 +7,7 @@ from typing import Any, Optional
 
 import httpx
 
-from routers.settings import _get_deepseek_api_key
+from utils.ai_access import get_platform_deepseek_api_key
 from utils.answer_normalizer import normalize_question_type, normalize_standard_answer
 from utils.file_extract import IMAGE_EXTENSIONS, TEXT_EXTRACT_EXTENSIONS, _extract_from_txt, extract_text_from_file
 
@@ -145,8 +145,12 @@ def extract_text_for_ai_fallback(filename: str, file_bytes: bytes) -> str:
     raise ValueError(f"暂不支持对 {suffix or '无扩展名文件'} 进行 AI 兜底解析")
 
 
-async def parse_questions_with_ai(text: str, source_name: Optional[str] = None) -> tuple[list[dict[str, Any]], list[str]]:
-    api_key = _get_deepseek_api_key()
+async def parse_questions_with_ai(
+    text: str,
+    source_name: Optional[str] = None,
+    api_key: Optional[str] = None,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    api_key = api_key or get_platform_deepseek_api_key()
     if not api_key:
         return [], ["尚未配置 DeepSeek API Key"]
 
@@ -214,8 +218,12 @@ async def parse_questions_with_ai(text: str, source_name: Optional[str] = None) 
     return sanitize_ai_questions(payload)
 
 
-async def parse_image_with_ai(image_bytes: bytes, filename: str) -> tuple[list[dict[str, Any]], list[str]]:
-    api_key = _get_deepseek_api_key()
+async def parse_image_with_ai(
+    image_bytes: bytes,
+    filename: str,
+    api_key: Optional[str] = None,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    api_key = api_key or get_platform_deepseek_api_key()
     if not api_key:
         return [], ["尚未配置 DeepSeek API Key"]
 

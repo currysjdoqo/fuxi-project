@@ -14,8 +14,9 @@ database/
 
 # Frontend
 node_modules/
-dist/
+/dist/
 build/
+!/frontend/dist/
 .DS_Store
 *.log
 

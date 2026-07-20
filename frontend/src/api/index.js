@@ -28,8 +28,8 @@ api.interceptors.response.use(
   }
 )
 
-export const register = async (username, password) => {
-  const response = await api.post('/auth/register', { username, password })
+export const register = async (username, password, inviteCode = '') => {
+  const response = await api.post('/auth/register', { username, password, invite_code: inviteCode })
   return response.data
 }
 
@@ -332,6 +332,21 @@ export const getSettings = async () => {
 
 export const saveDeepSeekKey = async (apiKey) => {
   const response = await api.post('/settings/deepseek-key', { api_key: apiKey })
+  return response.data
+}
+
+export const saveCustomAiKey = async (apiKey) => {
+  const response = await api.post('/settings/custom-ai-key', { api_key: apiKey })
+  return response.data
+}
+
+export const deleteCustomAiKey = async () => {
+  const response = await api.delete('/settings/custom-ai-key')
+  return response.data
+}
+
+export const setAiProvider = async (aiProvider) => {
+  const response = await api.post('/settings/ai-provider', { ai_provider: aiProvider })
   return response.data
 }
 

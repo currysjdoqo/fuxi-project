@@ -1,20 +1,18 @@
-"""
-AI 讲解 API 路由
-"""
-
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import BaseModel
-from typing import Optional
-import time
 from collections import defaultdict
 import threading
+import time
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.orm import Session
 
 from auth import get_current_user
 from database import get_db
 from models import Question, Subject, User
+from utils.ai_access import get_effective_deepseek_api_key, get_user_deepseek_api_key
+from utils.billing import consume_keepseek_use
 from utils.deepseek import get_ai_explanation, has_api_key
 
-router = APIRouter(prefix="/ai", tags=["AI讲解"])
+router = APIRouter(prefix="/ai", tags=["AI璁茶В"])
 
 rate_limit_store = defaultdict(list)
 RATE_LIMIT = 5
@@ -35,63 +33,66 @@ def check_rate_limit(user_id: int) -> bool:
 @router.get("/explain")
 async def explain_question(
     question_id: int = Query(...),
-    current_user: User = Depends(get_current_user)
+    use_credit: bool = Query(False),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    """获取题目讲解（每分钟最多调用 5 次）"""
     if not check_rate_limit(current_user.id):
-        raise HTTPException(
-            status_code=429,
-            detail="请求过于频繁，请稍后再试（每分钟最多 5 次）"
-        )
-    
-    db = next(get_db())
+        raise HTTPException(status_code=429, detail="请求过于频繁")
 
     question = db.query(Question).filter(
         Question.id == question_id,
-        Question.deleted_at.is_(None)
+        Question.user_id == current_user.id,
+        Question.deleted_at.is_(None),
     ).first()
-
     if not question:
         raise HTTPException(status_code=404, detail="题目不存在")
 
-    # 检查是否配置了 API Key
-    if not has_api_key():
+    api_key = get_effective_deepseek_api_key(current_user)
+    using_custom_key = bool(get_user_deepseek_api_key(current_user))
+    if current_user.ai_provider == "custom" and not using_custom_key:
+        raise HTTPException(status_code=400, detail="请先配置个人 DeepSeek API Key")
+
+    if not using_custom_key:
+        quota_result = consume_keepseek_use(db, current_user, "ai_explain", allow_credits=use_credit)
+        if not quota_result["allowed"]:
+            raise HTTPException(status_code=402, detail=quota_result)
+
+    if not has_api_key(api_key):
         return {
             "success": False,
             "error": "API_KEY_NOT_CONFIGURED",
-            "message": "尚未配置 DeepSeek API Key，请在设置页面配置后重试。"
+            "message": "尚未配置 DeepSeek API Key",
         }
 
-    # 获取科目名称
     subject_name = None
     if question.subject_id:
         subject = db.query(Subject).filter(
-            Subject.id == question.subject_id
+            Subject.id == question.subject_id,
+            Subject.user_id == current_user.id,
         ).first()
         if subject:
             subject_name = subject.name
 
-    # 调用 DeepSeek API
     explanation = await get_ai_explanation(
         question_content=question.content,
         question_type=question.type,
         options=question.options,
         correct_answer=question.answer,
-        subject_name=subject_name
+        subject_name=subject_name,
+        api_key=api_key,
     )
 
     return {
         "success": True,
         "question_id": question_id,
-        "explanation": explanation
+        "explanation": explanation,
     }
 
 
 @router.get("/check")
 def check_api_status():
-    """检查 API 配置状态"""
-    configured = has_api_key()
     return {
-        "configured": configured,
-        "message": "DeepSeek API Key 已配置" if configured else "尚未配置 DeepSeek API Key"
+        "configured": has_api_key(),
+        "message": "DeepSeek API Key 已配置" if has_api_key() else "尚未配置 DeepSeek API Key",
     }
