@@ -9,6 +9,13 @@ from fastapi.staticfiles import StaticFiles
 from database import Base, engine
 
 load_dotenv()
+
+from utils.db_migration import migrate_all_tables
+
+Base.metadata.create_all(bind=engine)
+
+migrate_all_tables()
+
 from routers.auth import router as auth_router
 from routers.export import router as export_router
 from routers.ai import router as ai_router
@@ -31,8 +38,6 @@ app = FastAPI(
     description="FastAPI + SQLAlchemy + SQLite",
     version="1.0.0",
 )
-
-Base.metadata.create_all(bind=engine)
 
 allowed_origins = [
     origin.strip()

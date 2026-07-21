@@ -5,7 +5,9 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
 BASE_DIR = Path(__file__).resolve().parent
-SQLALCHEMY_DATABASE_URL = f"sqlite:///{(BASE_DIR / 'test.db').as_posix()}"
+DATA_DIR = BASE_DIR / "data"
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+SQLALCHEMY_DATABASE_URL = f"sqlite:///{(DATA_DIR / 'test.db').as_posix()}"
 
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
