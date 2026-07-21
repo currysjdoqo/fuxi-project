@@ -7,7 +7,6 @@ from typing import Any, Optional
 
 import httpx
 
-from utils.ai_access import get_platform_deepseek_api_key
 from utils.answer_normalizer import normalize_question_type, normalize_standard_answer
 from utils.file_extract import IMAGE_EXTENSIONS, TEXT_EXTRACT_EXTENSIONS, _extract_from_txt, extract_text_from_file
 
@@ -150,27 +149,16 @@ async def parse_questions_with_ai(
     source_name: Optional[str] = None,
     api_key: Optional[str] = None,
 ) -> tuple[list[dict[str, Any]], list[str]]:
-    api_key = api_key or get_platform_deepseek_api_key()
     if not api_key:
-        return [], ["尚未配置 DeepSeek API Key"]
+        return [], ["尚未配置个人 DeepSeek API Key"]
 
     cleaned_text = str(text or "").strip()
     if not cleaned_text:
         return [], ["缺少可供 AI 解析的文本内容"]
 
     prompt = f"""你是题库导入助手。请把下面的原始内容提取成题目 JSON。
-
-要求：
-1. 只能输出 JSON，不能输出任何额外解释。
-2. 输出格式必须是数组，每个元素包含：type, content, options, answer, explanation。
-3. type 只能是：single, multi, judge, fill, short, code。
-4. single/multi 的 options 必须是对象，键只能是 A-F。
-5. judge 的 answer 只能是 T 或 F，options 固定为 {{"T":"正确","F":"错误"}}。
-6. fill/short/code 没有选项时，options 返回空对象。
-7. 无法确定的题目不要编造，直接跳过。
-8. 如果原文里没有解析，explanation 返回空字符串。
-
-来源：{source_name or "用户导入内容"}
+要求：1. 只能输出 JSON，不能输出任何额外解释。2. 输出格式必须是数组，每个元素包含：type, content, options, answer, explanation。3. type 只能是：single, multi, judge, fill, short, code。4. single/multi 的 options 必须是对象，键只能是 A-F。5. judge 的 answer 只能是 T 或 F，options 固定为 {{"T":"正确","F":"错误"}}。6. fill/short/code 没有选项时，options 返回空对象。7. 无法确定的题目不要编造，直接跳过。8. 如果原文里没有解析，explanation 返回空字符串。
+来源：{source_name or '用户导入内容'}
 原始内容如下：
 {cleaned_text}
 """
@@ -223,9 +211,8 @@ async def parse_image_with_ai(
     filename: str,
     api_key: Optional[str] = None,
 ) -> tuple[list[dict[str, Any]], list[str]]:
-    api_key = api_key or get_platform_deepseek_api_key()
     if not api_key:
-        return [], ["尚未配置 DeepSeek API Key"]
+        return [], ["尚未配置个人 DeepSeek API Key"]
 
     if not image_bytes:
         return [], ["图片文件为空"]
@@ -240,17 +227,7 @@ async def parse_image_with_ai(
         suffix = "png"
 
     prompt = """你是题库导入助手。请识别图片中的题目内容，并提取成题目 JSON。
-
-要求：
-1. 只能输出 JSON，不能输出任何额外解释。
-2. 输出格式必须是数组，每个元素包含：type, content, options, answer, explanation。
-3. type 只能是：single, multi, judge, fill, short, code。
-4. single/multi 的 options 必须是对象，键只能是 A-F。
-5. judge 的 answer 只能是 T 或 F，options 固定为 {"T":"正确","F":"错误"}。
-6. fill/short/code 没有选项时，options 返回空对象。
-7. 无法确定的题目不要编造，直接跳过。
-8. 如果图片里没有解析，explanation 返回空字符串。
-9. 如果图片中有多道题目，请全部识别并输出。"""
+要求：1. 只能输出 JSON，不能输出任何额外解释。2. 输出格式必须是数组，每个元素包含：type, content, options, answer, explanation。3. type 只能是：single, multi, judge, fill, short, code。4. single/multi 的 options 必须是对象，键只能是 A-F。5. judge 的 answer 只能是 T 或 F，options 固定为 {"T":"正确","F":"错误"}。6. fill/short/code 没有选项时，options 返回空对象。7. 无法确定的题目不要编造，直接跳过。8. 如果图片里没有解析，explanation 返回空字符串。9. 如果图片中有多道题目，请全部识别并输出。"""
 
     try:
         async with httpx.AsyncClient(timeout=90.0) as client:

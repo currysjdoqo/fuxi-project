@@ -1,4 +1,4 @@
-from pathlib import Path
+﻿from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import quote
 
@@ -12,10 +12,15 @@ from database import get_db
 from models import Question, Subject, User
 from routers.subjects import get_or_create_default_subject
 from utils.answer_normalizer import normalize_question_type, normalize_standard_answer
-from utils.ai_access import get_effective_deepseek_api_key, get_user_deepseek_api_key
-from utils.billing import consume_keepseek_use
+from utils.ai_access import get_user_deepseek_api_key
 from utils.ai_import import extract_text_for_ai_fallback, parse_image_with_ai, parse_questions_with_ai
-from utils.file_extract import IMAGE_EXTENSIONS, TEXT_EXTRACT_EXTENSIONS, extract_text_from_file, extract_zip_file, save_uploaded_file
+from utils.file_extract import (
+    IMAGE_EXTENSIONS,
+    TEXT_EXTRACT_EXTENSIONS,
+    extract_text_from_file,
+    extract_zip_file,
+    save_uploaded_file,
+)
 from utils.import_template import generate_excel_template
 from utils.parser import parse_exercise_text, parse_file
 
@@ -142,7 +147,7 @@ def resolve_subject_id(subject_id: Optional[int], db: Session, current_user: Use
         return get_or_create_default_subject(db, current_user.id).id
     subject = db.query(Subject).filter(Subject.id == subject_id, Subject.user_id == current_user.id).first()
     if not subject:
-        raise HTTPException(status_code=404, detail="科目不存在")
+        raise HTTPException(status_code=404, detail="Subject not found")
     return subject.id
 
 
@@ -151,9 +156,9 @@ def resolve_user_upload_file(saved_name: str, current_user: User) -> Path:
     base_dir = get_user_upload_dir(current_user.id).resolve()
     file_path = (base_dir / safe_saved_name).resolve()
     if not str(file_path).startswith(str(base_dir)):
-        raise HTTPException(status_code=400, detail="非法文件路径")
+        raise HTTPException(status_code=400, detail="Invalid file path")
     if not file_path.exists():
-        raise HTTPException(status_code=404, detail="文件不存在")
+        raise HTTPException(status_code=404, detail="File not found")
     return file_path
 
 
@@ -176,7 +181,7 @@ def create_question(
     )
     for question in all_questions:
         if normalize_content(question.content) == normalized_content:
-            raise HTTPException(status_code=400, detail="题目已存在")
+            raise HTTPException(status_code=400, detail="Question already exists")
 
     new_question = Question(
         user_id=current_user.id,
@@ -190,7 +195,7 @@ def create_question(
     db.add(new_question)
     db.commit()
     db.refresh(new_question)
-    return {"id": new_question.id, "message": "题目添加成功"}
+    return {"id": new_question.id, "message": "Question created"}
 
 
 @router.post("/import/parse", response_model=List[ParsedQuestion])
@@ -201,16 +206,11 @@ def parse_questions(request: ParseRequest):
 @router.post("/import/ai-parse", response_model=AiParseResponse)
 async def ai_parse_questions(
     request: AiParseRequest,
-    db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    api_key = get_effective_deepseek_api_key(current_user)
-    if current_user.ai_provider == "custom" and not get_user_deepseek_api_key(current_user):
-        raise HTTPException(status_code=400, detail="请先配置个人 DeepSeek API Key")
-    if current_user.ai_provider != "custom":
-        quota_result = consume_keepseek_use(db, current_user, "ai_import_parse", allow_credits=False)
-        if not quota_result["allowed"]:
-            raise HTTPException(status_code=402, detail=quota_result)
+    api_key = get_user_deepseek_api_key(current_user)
+    if not api_key:
+        raise HTTPException(status_code=400, detail="Please configure your personal DeepSeek API Key first")
     questions, errors = await parse_questions_with_ai(request.text, request.source_name, api_key=api_key)
     return {
         "parsed_questions": [ParsedQuestion(**q) for q in questions],
@@ -222,23 +222,18 @@ async def ai_parse_questions(
 @router.post("/import/ai-parse-file", response_model=ParseFileResponse)
 async def ai_parse_uploaded_file(
     file: UploadFile = File(...),
-    db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     if not file.filename:
-        raise HTTPException(status_code=400, detail="文件名为空")
+        raise HTTPException(status_code=400, detail="Empty filename")
 
     file_bytes = await file.read()
     if not file_bytes:
-        raise HTTPException(status_code=400, detail="上传文件为空")
+        raise HTTPException(status_code=400, detail="Uploaded file is empty")
 
-    api_key = get_effective_deepseek_api_key(current_user)
-    if current_user.ai_provider == "custom" and not get_user_deepseek_api_key(current_user):
-        raise HTTPException(status_code=400, detail="请先配置个人 DeepSeek API Key")
-    if current_user.ai_provider != "custom":
-        quota_result = consume_keepseek_use(db, current_user, "ai_import_file", allow_credits=False)
-        if not quota_result["allowed"]:
-            raise HTTPException(status_code=402, detail=quota_result)
+    api_key = get_user_deepseek_api_key(current_user)
+    if not api_key:
+        raise HTTPException(status_code=400, detail="Please configure your personal DeepSeek API Key first")
 
     suffix = Path(file.filename).suffix.lower()
     if suffix in IMAGE_EXTENSIONS:
@@ -261,10 +256,10 @@ async def extract_file(
     current_user: User = Depends(get_current_user),
 ):
     if not file.filename:
-        raise HTTPException(status_code=400, detail="文件名为空")
+        raise HTTPException(status_code=400, detail="Empty filename")
     file_bytes = await file.read()
     if not file_bytes:
-        raise HTTPException(status_code=400, detail="上传文件为空")
+        raise HTTPException(status_code=400, detail="Uploaded file is empty")
 
     saved_name, suffix = save_uploaded_file(file.filename, file_bytes, get_user_upload_dir(current_user.id))
     if suffix not in TEXT_EXTRACT_EXTENSIONS:
@@ -315,7 +310,7 @@ def download_import_template():
     return StreamingResponse(
         iter([template.getvalue()]),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers=build_download_headers("题目导入模板.xlsx"),
+        headers=build_download_headers("import-template.xlsx"),
     )
 
 
@@ -325,12 +320,12 @@ async def parse_uploaded_file(
     current_user: User = Depends(get_current_user),
 ):
     if not file.filename:
-        raise HTTPException(status_code=400, detail="文件名为空")
-    
+        raise HTTPException(status_code=400, detail="Empty filename")
+
     file_bytes = await file.read()
     if not file_bytes:
-        raise HTTPException(status_code=400, detail="上传文件为空")
-    
+        raise HTTPException(status_code=400, detail="Uploaded file is empty")
+
     questions, errors = parse_file(file_bytes, file.filename)
     return {
         "filename": file.filename,
@@ -350,33 +345,29 @@ async def batch_parse_files(
     fail_files = 0
     all_questions: List[ParsedQuestion] = []
     all_errors: List[str] = []
-    
+
     for file in files:
         if not file.filename:
             continue
-            
         try:
             file_bytes = await file.read()
             if not file_bytes:
-                all_errors.append(f"文件 {file.filename} 为空")
+                all_errors.append(f"File {file.filename} is empty")
                 fail_files += 1
                 continue
-                
+
             questions, errors = parse_file(file_bytes, file.filename)
-            
             if errors:
                 all_errors.extend([f"{file.filename}: {err}" for err in errors])
-            
             if questions:
                 all_questions.extend([ParsedQuestion(**q) for q in questions])
                 success_files += 1
             else:
                 fail_files += 1
-                
-        except Exception as e:
-            all_errors.append(f"文件 {file.filename} 解析失败: {str(e)}")
+        except Exception as exc:
+            all_errors.append(f"File {file.filename} parse failed: {exc}")
             fail_files += 1
-    
+
     return {
         "total_files": total_files,
         "success_files": success_files,

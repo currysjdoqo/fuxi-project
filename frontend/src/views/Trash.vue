@@ -243,27 +243,27 @@ onMounted(async () => {
 <style scoped>
 .trash-page {
   min-height: 100vh;
+  padding: 22px 26px 32px 48px;
 }
 
 .page-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  padding: 18px 24px;
-  background: #fff;
-  border-bottom: 1px solid #e4e7ed;
+  align-items: flex-start;
+  gap: 18px;
+  margin-bottom: 20px;
 }
 
 .page-header h1 {
-  margin: 0 0 4px;
-  font-size: 22px;
-  color: #303133;
+  margin: 0 0 8px;
+  font-size: 30px;
+  color: #2f241b;
 }
 
 .page-header p {
   margin: 0;
-  color: #909399;
-  font-size: 13px;
+  color: #736153;
+  line-height: 1.65;
 }
 
 .header-actions,
@@ -278,7 +278,7 @@ onMounted(async () => {
 }
 
 .toolbar {
-  padding: 14px 20px 0;
+  padding: 0 0 14px;
 }
 
 .toolbar span {
@@ -286,7 +286,17 @@ onMounted(async () => {
 }
 
 .table-panel {
-  padding: 20px;
+  padding: 0;
+}
+
+@media (max-width: 1180px) {
+  .trash-page {
+    padding: 18px 16px 28px;
+  }
+
+  .page-header {
+    flex-direction: column;
+  }
 }
 
 .stem {

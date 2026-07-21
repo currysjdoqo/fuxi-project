@@ -6,15 +6,12 @@ from __future__ import annotations
 
 import httpx
 
-from utils.ai_access import get_platform_deepseek_api_key
-
 DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
 DEEPSEEK_MODEL = "deepseek-v4-flash"
 
 
 def has_api_key(api_key: str | None = None) -> bool:
-    key = api_key if api_key is not None else get_platform_deepseek_api_key()
-    return bool(key)
+    return bool(api_key)
 
 
 async def get_ai_explanation(
@@ -26,9 +23,9 @@ async def get_ai_explanation(
     subject_name: str | None = None,
     api_key: str | None = None,
 ) -> str:
-    key = api_key if api_key is not None else get_platform_deepseek_api_key()
+    key = api_key
     if not key:
-        return "尚未配置 DeepSeek API Key"
+        return "尚未配置个人 DeepSeek API Key"
 
     type_labels = {
         "single": "单选题",
@@ -56,10 +53,7 @@ async def get_ai_explanation(
 {f'选项：\n{options_text}' if options_text else ''}
 正确答案：{correct_answer or ''}
 学科：{subject_name or ''}
-要求：
-1. 解释要简短直接
-2. 指出易错点
-3. 不要编造题目外内容
+要求：1. 解释要简短直接 2. 指出易错点 3. 不要编造题目外内容
 """
 
     try:

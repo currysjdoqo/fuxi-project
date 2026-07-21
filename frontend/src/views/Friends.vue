@@ -857,46 +857,38 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .friends-shell {
-  --app-sidebar-width: clamp(220px, 18vw, 256px);
-  min-height: 100vh;
   background:
-    radial-gradient(circle at top left, rgba(184, 92, 56, 0.12), transparent 24%),
-    radial-gradient(circle at 85% 18%, rgba(92, 138, 53, 0.08), transparent 22%),
-    linear-gradient(180deg, #f4efe6 0%, #e8dfd0 100%);
-}
-
-.friends-shell .desktop-sidebar-handle {
-  display: none;
+    radial-gradient(circle at top left, rgba(184, 92, 56, 0.16), transparent 28%),
+    linear-gradient(135deg, #f7f1e7 0%, #f3ece1 52%, #ebe0d3 100%);
 }
 
 .friends-page {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  overflow-x: hidden;
-  overflow-y: auto;
+  overflow: visible;
+  padding: 22px 26px 32px 48px;
 }
 
 .page-header {
   display: flex;
   justify-content: space-between;
-  gap: 20px;
-  padding: 24px 28px 18px;
-  background: rgba(255, 255, 255, 0.78);
-  backdrop-filter: blur(12px);
-  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+  gap: 18px;
+  align-items: flex-start;
+  margin-bottom: 20px;
 }
 
 .header-main h1 {
-  margin: 0;
+  margin: 0 0 8px;
   font-size: 30px;
-  color: #0f172a;
+  color: #2f241b;
 }
 
 .header-main p {
-  margin: 8px 0 0;
-  color: #475569;
-  line-height: 1.7;
+  margin: 0;
+  max-width: 720px;
+  color: #736153;
+  line-height: 1.65;
 }
 
 .header-nav {
@@ -911,11 +903,10 @@ onBeforeUnmount(() => {
   align-items: center;
   padding: 6px 12px;
   border-radius: 999px;
-  background: rgba(184, 92, 56, 0.15);
-  color: #b85c38;
+  background: rgba(184, 92, 56, 0.12);
+  color: #914b2d;
   font-size: 12px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  font-weight: 600;
 }
 
 .header-actions {
@@ -926,8 +917,8 @@ onBeforeUnmount(() => {
 }
 
 .focus-action {
-  border-color: rgba(184, 92, 56, 0.3);
-  color: #b85c38;
+  border-color: rgba(184, 92, 56, 0.24);
+  color: #8e4528;
   background: rgba(184, 92, 56, 0.08);
 }
 
@@ -940,8 +931,8 @@ onBeforeUnmount(() => {
   min-height: 0;
   display: flex;
   align-items: stretch;
-  gap: 20px;
-  padding: 20px 28px 28px;
+  gap: 18px;
+  padding: 0;
   overflow: visible;
 }
 
@@ -961,11 +952,10 @@ onBeforeUnmount(() => {
 .friends-sidebar,
 .chat-stage {
   min-height: 0;
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  border-radius: 24px;
-  background: rgba(255, 255, 255, 0.86);
-  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.08);
-  backdrop-filter: blur(18px);
+  border: 1px solid rgba(125, 86, 63, 0.12);
+  border-radius: 20px;
+  background: rgba(255, 252, 247, 0.92);
+  box-shadow: 0 16px 32px rgba(96, 70, 50, 0.08);
 }
 
 .friends-sidebar {
@@ -1375,9 +1365,6 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 1280px) {
-  .friends-board {
-    padding: 18px;
-  }
   .friends-sidebar {
     width: min(340px, 40vw);
   }
@@ -1398,14 +1385,11 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 720px) {
-  .page-header,
-  .friends-board {
-    padding-left: 16px;
-    padding-right: 16px;
+  .friends-page {
+    padding: 18px 16px 28px;
   }
 
   .page-header {
-    padding-top: 18px;
     flex-direction: column;
     align-items: flex-start;
   }

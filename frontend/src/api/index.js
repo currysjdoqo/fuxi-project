@@ -330,11 +330,6 @@ export const getSettings = async () => {
   return response.data
 }
 
-export const saveDeepSeekKey = async (apiKey) => {
-  const response = await api.post('/settings/deepseek-key', { api_key: apiKey })
-  return response.data
-}
-
 export const saveCustomAiKey = async (apiKey) => {
   const response = await api.post('/settings/custom-ai-key', { api_key: apiKey })
   return response.data
@@ -345,8 +340,23 @@ export const deleteCustomAiKey = async () => {
   return response.data
 }
 
-export const setAiProvider = async (aiProvider) => {
-  const response = await api.post('/settings/ai-provider', { ai_provider: aiProvider })
+export const getBillingStatus = async () => {
+  const response = await api.get('/billing/status')
+  return response.data
+}
+
+export const createPaymentOrder = async (payload) => {
+  const response = await api.post('/billing/payments/create', payload)
+  return response.data
+}
+
+export const getPaymentOrder = async (orderNo) => {
+  const response = await api.get(`/billing/payments/${orderNo}`)
+  return response.data
+}
+
+export const exchangeCredits = async (amountCents) => {
+  const response = await api.post('/billing/credits/exchange', { amount_cents: amountCents })
   return response.data
 }
 

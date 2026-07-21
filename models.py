@@ -147,3 +147,24 @@ class KeepSeekUsage(Base):
     source = Column(String, nullable=False)
     cost_type = Column(String, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class PaymentOrder(Base):
+    __tablename__ = "payment_orders"
+
+    id = Column(Integer, primary_key=True, index=True)
+    order_no = Column(String(64), unique=True, index=True, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    provider = Column(String(32), nullable=False)
+    product_type = Column(String(32), nullable=False)
+    plan = Column(String(32), nullable=True)
+    amount_cents = Column(Integer, nullable=False)
+    status = Column(String(32), default="pending", nullable=False)
+    subject = Column(String(255), nullable=False)
+    provider_order_no = Column(String(128), nullable=True)
+    payment_url = Column(String, nullable=True)
+    callback_payload = Column(JSON, nullable=True)
+    paid_at = Column(DateTime, nullable=True)
+    applied_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

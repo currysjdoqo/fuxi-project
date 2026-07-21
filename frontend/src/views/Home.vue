@@ -1550,55 +1550,47 @@ onUnmounted(() => {
 <style scoped>
 .main-content {
   flex: 1;
-  position: relative;
   min-width: 0;
   min-height: 100vh;
+  position: relative;
 }
 
 .desktop-sidebar-handle {
-  position: fixed;
-  top: 24px;
-  left: calc(var(--sidebar-width) - 18px);
-  z-index: 110;
-  width: 36px;
-  height: 36px;
-  border: 1px solid rgba(184, 92, 56, 0.2);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.96);
-  color: #b85c38;
-  font-size: 18px;
-  line-height: 1;
-  box-shadow: 0 10px 24px rgba(44, 36, 22, 0.12);
+  position: absolute;
+  top: 20px;
+  left: 12px;
+  z-index: 20;
+  width: 28px;
+  height: 56px;
+  border: none;
+  border-radius: 14px;
+  background: rgba(61, 47, 36, 0.9);
+  color: #fff;
   cursor: pointer;
-  transition: left 0.25s ease, background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+  transition: all 0.2s ease;
 }
 
 .desktop-sidebar-handle:hover {
-  background: #b85c38;
-  color: #fff;
-  box-shadow: 0 14px 28px rgba(184, 92, 56, 0.3);
+  background: rgba(47, 36, 27, 0.96);
 }
 
 .desktop-sidebar-handle.collapsed {
-  left: 12px;
+  left: 10px;
 }
 
 .practice-page {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  padding: 22px 26px 32px 48px;
 }
 
 .page-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  gap: 16px;
-  padding: clamp(16px, 2vw, 24px);
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(12px);
-  border-bottom: 1px solid var(--border-color);
-  box-shadow: var(--shadow-sm);
+  align-items: flex-start;
+  gap: 18px;
+  margin-bottom: 20px;
 }
 
 .header-main {
@@ -1637,15 +1629,16 @@ onUnmounted(() => {
 }
 
 .page-header h1 {
-  margin: 0 0 4px;
-  font-size: 22px;
-  color: #303133;
+  margin: 0 0 8px;
+  font-size: 30px;
+  color: #2f241b;
 }
 
 .page-header p {
   margin: 0;
-  color: #909399;
-  font-size: 13px;
+  max-width: 720px;
+  color: #736153;
+  line-height: 1.65;
 }
 
 .header-actions,
@@ -1656,10 +1649,8 @@ onUnmounted(() => {
 }
 
 .subject-page {
-  max-width: 1180px;
   width: 100%;
-  margin: 0 auto;
-  padding: clamp(16px, 2vw, 24px);
+  padding: 0;
 }
 
 .create-subject {
@@ -1743,13 +1734,13 @@ onUnmounted(() => {
   display: grid;
   grid-template-columns: clamp(240px, 22vw, 320px) minmax(0, 1fr);
   gap: clamp(14px, 1.8vw, 24px);
-  padding: clamp(16px, 2vw, 24px);
+  padding: 0;
   align-items: start;
 }
 
 .type-filter {
-  padding: 16px clamp(16px, 2vw, 24px) 0;
-  background: #f5f7fa;
+  padding: 0 0 18px;
+  background: transparent;
 }
 
 .practice-toolbar {
@@ -1758,6 +1749,11 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  padding: 18px 20px;
+  border-radius: 20px;
+  border: 1px solid rgba(125, 86, 63, 0.12);
+  background: rgba(255, 252, 247, 0.92);
+  box-shadow: 0 16px 32px rgba(96, 70, 50, 0.08);
 }
 
 .practice-mode-controls {
@@ -2356,7 +2352,7 @@ onUnmounted(() => {
 
 @media (max-width: 720px) {
   .page-header h1 {
-    font-size: 20px;
+    font-size: 24px;
   }
 
   .header-actions,

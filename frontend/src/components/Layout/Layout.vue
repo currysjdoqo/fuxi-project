@@ -105,73 +105,44 @@ defineExpose({
 <style scoped>
 .app-layout {
   --sidebar-width: clamp(220px, 18vw, 256px);
-  --primary-color: #b85c38;
-  --primary-dark: #8d3f1f;
-  --primary-light: rgba(184, 92, 56, 0.12);
-  --success-color: #5c8a35;
-  --warning-color: #b8860b;
-  --danger-color: #a63434;
-  --text-primary: #2c2416;
-  --text-secondary: #6b5b45;
-  --text-muted: #8b7b65;
-  --bg-primary: #ffffff;
-  --bg-secondary: #f8f4ec;
-  --bg-gradient-start: #f4efe6;
-  --bg-gradient-end: #f1e7d8;
-  --border-color: #e8dfd0;
-  --shadow-sm: 0 1px 2px 0 rgba(44, 36, 22, 0.05);
-  --shadow-md: 0 4px 6px -1px rgba(44, 36, 22, 0.1), 0 2px 4px -1px rgba(44, 36, 22, 0.06);
-  --shadow-lg: 0 10px 15px -3px rgba(44, 36, 22, 0.1), 0 4px 6px -2px rgba(44, 36, 22, 0.05);
-  --shadow-xl: 0 20px 25px -5px rgba(44, 36, 22, 0.1), 0 10px 10px -5px rgba(44, 36, 22, 0.04);
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
-  --radius-xl: 24px;
   display: flex;
   min-height: 100vh;
-  background: linear-gradient(135deg, rgba(184, 92, 56, 0.08) 0%, rgba(184, 92, 56, 0.04) 50%, rgba(139, 63, 31, 0.06) 100%);
-  background-attachment: fixed;
+  background:
+    radial-gradient(circle at top left, rgba(184, 92, 56, 0.16), transparent 28%),
+    linear-gradient(135deg, #f7f1e7 0%, #f3ece1 52%, #ebe0d3 100%);
 }
 
 .mobile-nav-mask {
   position: fixed;
   inset: 0;
+  background: rgba(24, 18, 12, 0.45);
   z-index: 90;
-  background: rgba(15, 23, 42, 0.36);
-  backdrop-filter: blur(4px);
 }
 
 .main-content {
   flex: 1;
-  position: relative;
   min-width: 0;
   min-height: 100vh;
+  position: relative;
 }
 
 .desktop-sidebar-handle {
   position: absolute;
   top: 20px;
-  left: -18px;
-  width: 36px;
-  height: 36px;
-  border: 1px solid rgba(184, 92, 56, 0.2);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.96);
-  color: #b85c38;
-  font-size: 14px;
+  left: 12px;
+  z-index: 20;
+  width: 28px;
+  height: 56px;
+  border: none;
+  border-radius: 14px;
+  background: rgba(61, 47, 36, 0.9);
+  color: #fff;
   cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   transition: all 0.2s ease;
-  z-index: 10;
-  box-shadow: 0 2px 8px rgba(44, 36, 22, 0.1);
 }
 
 .desktop-sidebar-handle:hover {
-  background: #b85c38;
-  color: white;
-  border-color: #b85c38;
+  background: rgba(47, 36, 27, 0.96);
 }
 
 .desktop-sidebar-handle.collapsed {
