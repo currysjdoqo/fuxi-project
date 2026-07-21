@@ -1,12 +1,22 @@
 import hashlib
 import hmac
 import secrets
+import time
+import threading
+from collections import defaultdict
 
 from fastapi import Depends, Header, HTTPException
 from sqlalchemy.orm import Session
 
 from database import get_db
 from models import User
+
+RATE_LIMIT_STORE = defaultdict(list)
+RATE_LIMIT_MAX = 5
+RATE_LIMIT_WINDOW = 60
+RATE_LIMIT_LOCK = threading.Lock()
+
+TOKEN_EXPIRY_HOURS = 24
 
 
 def hash_password(password: str) -> str:
@@ -32,8 +42,17 @@ def verify_password(password: str, password_hash: str) -> bool:
         except (ValueError, TypeError):
             return False
 
-    # 兼容旧版单次 SHA-256 哈希
     return hashlib.sha256(password.encode("utf-8")).hexdigest() == password_hash
+
+
+def check_auth_rate_limit(key: str) -> bool:
+    now = time.time()
+    with RATE_LIMIT_LOCK:
+        RATE_LIMIT_STORE[key] = [t for t in RATE_LIMIT_STORE[key] if now - t < RATE_LIMIT_WINDOW]
+        if len(RATE_LIMIT_STORE[key]) >= RATE_LIMIT_MAX:
+            return False
+        RATE_LIMIT_STORE[key].append(now)
+    return True
 
 
 def issue_token() -> str:

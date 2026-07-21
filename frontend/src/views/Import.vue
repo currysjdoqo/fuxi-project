@@ -1,75 +1,7 @@
 <template>
-  <div class="app-layout" :class="{ 'sidebar-collapsed': sidebarCollapsed, 'mobile-nav-open': mobileNavOpen }">
-    <div v-if="mobileNavOpen" class="mobile-nav-mask" @click="closeMobileNav"></div>
-    <nav class="sidebar">
-      <div class="logo-section">
-        <svg class="logo-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-          <path d="M2 17L12 22L22 17" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-          <path d="M2 12L12 17L22 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-        <h2>习题管理系统</h2>
-      </div>
-      <div class="nav-menu">
-        <div class="nav-item" :class="{ active: $route.path === '/' }" @click="$router.push('/')">
-          <el-icon><Document /></el-icon>
-          <span>练习模式</span>
-        </div>
-        <div class="nav-item" :class="{ active: $route.path === '/plan' }" @click="$router.push('/plan')">
-          <el-icon><List /></el-icon>
-          <span>学习计划</span>
-        </div>
-        <div class="nav-item" :class="{ active: $route.path === '/import' }" @click="$router.push('/import')">
-          <el-icon><Plus /></el-icon>
-          <span>导入习题</span>
-        </div>
-        <div class="nav-item" :class="{ active: $route.path === '/review' }" @click="$router.push('/review')">
-          <el-icon><Refresh /></el-icon>
-          <span>复习模式</span>
-        </div>
-        <div class="nav-item" :class="{ active: $route.path === '/trash' }" @click="$router.push('/trash')">
-          <el-icon><Delete /></el-icon>
-          <span>垃圾桶</span>
-        </div>
-        <div class="nav-item" :class="{ active: $route.path === '/settings' }" @click="$router.push('/settings')">
-          <el-icon><Setting /></el-icon>
-          <span>设置</span>
-        </div>
-      </div>
-      <div class="user-section">
-        <div class="user-info">
-          <div class="avatar" :style="{ background: avatar ? `url(${avatar}) center/cover` : undefined }" @click="showProfileModal = true">
-            <template v-if="!avatar">{{ username.charAt(0).toUpperCase() }}</template>
-          </div>
-          <div class="user-details">
-            <span class="username">{{ username }}</span>
-            <span class="logout-btn" @click="handleLogout">退出登录</span>
-          </div>
-        </div>
-      </div>
-    </nav>
-
-    <div class="main-content">
-      <button
-        v-if="!isMobileNav"
-        type="button"
-        class="desktop-sidebar-handle"
-        :class="{ collapsed: sidebarCollapsed }"
-        :aria-label="sidebarCollapsed ? '展开导航栏' : '隐藏导航栏'"
-        @click="toggleSidebar"
-      >
-        {{ sidebarCollapsed ? '>' : '<' }}
-      </button>
-      <div class="import-page">
+  <Layout :username="username" :avatar="avatar" @show-profile="showProfileModal = true" @logout="handleLogout">
+    <div class="import-page">
         <header class="page-header">
-          <el-button
-            v-if="isMobileNav"
-            circle
-            text
-            class="header-nav-btn"
-            :icon="Menu"
-            @click="toggleMobileNav"
-          />
           <div>
             <h1>导入练习集</h1>
             <p>支持多种格式导入：Excel、CSV、JSON、TXT/MD、PDF、DOCX 以及图片 OCR</p>
@@ -254,8 +186,7 @@
           :username="username"
         />
       </div>
-    </div>
-  </div>
+</Layout>
 </template>
 
 <script setup>
@@ -263,14 +194,13 @@ import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Back, Delete, Document, Plus, Refresh, Setting, Star, Upload, UploadFilled, CircleClose, Menu, Download, List, Folder, Warning } from '@element-plus/icons-vue'
-import { useSidebarLayout } from '../composables/useSidebarLayout'
 import { useUser } from '../composables/useUser'
 import { clearAuthSession } from '../utils/authStorage'
 import { createSubject, downloadImportTemplate, getSubjects, importParsedQuestions, parseQuestions, parseQuestionsWithAi, parseUploadedFile, parseUploadedFileWithAi } from '../api'
 import ProfileModal from '../components/ProfileModal.vue'
+import Layout from '../components/Layout/Layout.vue'
 
 const router = useRouter()
-const { sidebarCollapsed, mobileNavOpen, isMobileNav, toggleSidebar, toggleMobileNav, closeMobileNav } = useSidebarLayout()
 const { username, avatar, loadUserInfo } = useUser()
 const showProfileModal = ref(false)
 const subjects = ref([])

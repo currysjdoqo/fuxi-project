@@ -47,10 +47,11 @@ async def get_ai_explanation(
                 if isinstance(opt, dict):
                     options_text += f"{opt.get('key', '')}. {opt.get('value', '')}\n"
 
+    options_section = f"选项：\n{options_text}" if options_text else ""
     prompt = f"""请作为辅导老师，简洁讲解这道题，帮助学生快速理解。
 题目类型：{type_name}
 题目：{question_content}
-{f'选项：\n{options_text}' if options_text else ''}
+{options_section}
 正确答案：{correct_answer or ''}
 学科：{subject_name or ''}
 要求：1. 解释要简短直接 2. 指出易错点 3. 不要编造题目外内容

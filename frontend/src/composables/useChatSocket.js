@@ -1,9 +1,9 @@
 import { onBeforeUnmount, ref } from 'vue'
 import { getAuthToken } from '../utils/authStorage'
 
-function buildSocketUrl(token) {
+function buildSocketUrl() {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  return `${protocol}//${window.location.host}/ws/chat?token=${encodeURIComponent(token)}`
+  return `${protocol}//${window.location.host}/ws/chat`
 }
 
 export function useChatSocket(handlers = {}) {
@@ -51,7 +51,7 @@ export function useChatSocket(handlers = {}) {
     clearReconnectTimer()
     state.value = reconnectAttempt > 0 ? 'reconnecting' : 'connecting'
 
-    const ws = new WebSocket(buildSocketUrl(token))
+    const ws = new WebSocket(buildSocketUrl(), [`Bearer ${token}`])
     socket.value = ws
 
     ws.onopen = () => {

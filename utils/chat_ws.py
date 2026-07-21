@@ -2,11 +2,22 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import timezone
+import html
 
 from fastapi import WebSocket
 from sqlalchemy.orm import Session
 
 from models import Friendship, Message
+
+
+def escape_html(content: str) -> str:
+    return html.escape(content, quote=True)
+
+
+def sanitize_message_content(content: str) -> str:
+    sanitized = escape_html(content)
+    sanitized = sanitized.replace("\n", "<br>")
+    return sanitized
 
 
 def serialize_message(message: Message) -> dict:
@@ -18,7 +29,7 @@ def serialize_message(message: Message) -> dict:
         "id": message.id,
         "sender_id": message.sender_id,
         "receiver_id": message.receiver_id,
-        "content": message.content,
+        "content": sanitize_message_content(message.content),
         "is_read": message.is_read,
         "created_at": created_at.isoformat().replace("+00:00", "Z"),
     }

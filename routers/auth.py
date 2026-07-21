@@ -2,11 +2,11 @@ import random
 import string
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from auth import get_current_user, hash_password, issue_token, verify_password
+from auth import check_auth_rate_limit, get_current_user, hash_password, issue_token, verify_password
 from database import get_db
 from models import User
 from utils.billing import ensure_user_invite_code
@@ -60,6 +60,9 @@ def register(request: AuthRequest, db: Session = Depends(get_db)):
     if len(password) < 6:
         raise HTTPException(status_code=400, detail="密码至少 6 位")
 
+    if not check_auth_rate_limit(f"register:{username}"):
+        raise HTTPException(status_code=429, detail="请求过于频繁，请稍后再试")
+
     existing = db.query(User).filter(User.username == username).first()
     if existing:
         raise HTTPException(status_code=400, detail="用户名已存在")
@@ -96,9 +99,13 @@ def register(request: AuthRequest, db: Session = Depends(get_db)):
 def login(request: AuthRequest, db: Session = Depends(get_db)):
     username = request.username.strip()
     password = request.password.strip()
+
+    if not check_auth_rate_limit(f"login:{username}"):
+        raise HTTPException(status_code=429, detail="请求过于频繁，请稍后再试")
+
     user = db.query(User).filter(User.username == username).first()
     if not user or not verify_password(password, user.password_hash):
-        raise HTTPException(status_code=401, detail="用户名或密码错误")
+        raise HTTPException(status_code=401, detail="登录失败，请检查用户名和密码")
 
     if not user.password_hash.startswith("pbkdf2_sha256$"):
         user.password_hash = hash_password(password)
@@ -112,6 +119,29 @@ def login(request: AuthRequest, db: Session = Depends(get_db)):
         "username": user.username,
         "user_code": user.user_code,
         "invite_code": user.invite_code,
+    }
+
+
+@router.post("/auth/refresh")
+def refresh_token(
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="无效的Token")
+
+    token = authorization.split(" ", 1)[1].strip()
+    user = db.query(User).filter(User.token == token).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="无效的Token")
+
+    user.token = issue_token()
+    db.commit()
+    db.refresh(user)
+    return {
+        "token": user.token,
+        "user_id": user.id,
+        "username": user.username,
     }
 
 

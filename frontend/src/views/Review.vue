@@ -1,75 +1,9 @@
 <template>
-  <div class="app-layout" :class="{ 'sidebar-collapsed': sidebarCollapsed, 'mobile-nav-open': mobileNavOpen }">
-    <div v-if="mobileNavOpen" class="mobile-nav-mask" @click="closeMobileNav"></div>
-    <nav class="sidebar" :class="{ collapsed: sidebarCollapsed, open: mobileNavOpen }">
-      <div class="logo-section">
-        <div class="logo-group">
-          <el-icon class="logo-icon"><Document /></el-icon>
-          <div class="logo-copy">
-            <h2>习题管理系统</h2>
-            <span>Practice Workspace</span>
-          </div>
-        </div>
-        <el-button
-          v-if="isMobileNav"
-          circle
-          text
-          class="sidebar-toggle mobile-close"
-          :icon="Close"
-          @click="closeMobileNav"
-        />
-      </div>
-
-      <div class="nav-menu">
-        <div class="nav-section-title">功能导航</div>
-        <div
-          v-for="item in navItems"
-          :key="item.path"
-          class="nav-item"
-          :class="{ active: route.path === item.path }"
-          @click="goToPath(item.path)"
-        >
-          <el-icon><component :is="item.icon" /></el-icon>
-          <span>{{ item.label }}</span>
-        </div>
-      </div>
-
-      <div class="user-section">
-        <div class="user-info">
-          <div class="avatar" :style="{ background: avatar ? `url(${avatar}) center/cover` : undefined }" @click="showProfileModal = true">
-            <template v-if="!avatar">{{ username.charAt(0).toUpperCase() }}</template>
-          </div>
-          <div class="user-details">
-            <span class="username">{{ username }}</span>
-            <span class="logout-btn" @click="handleLogout">退出登录</span>
-          </div>
-        </div>
-      </div>
-    </nav>
-
-    <div class="main-content">
-      <button
-        v-if="!isMobileNav"
-        type="button"
-        class="desktop-sidebar-handle"
-        :class="{ collapsed: sidebarCollapsed }"
-        :aria-label="sidebarCollapsed ? '展开导航栏' : '隐藏导航栏'"
-        @click="toggleSidebar"
-      >
-        {{ sidebarCollapsed ? '>' : '<' }}
-      </button>
-      <div class="practice-page">
+  <Layout :username="username" :avatar="avatar" @show-profile="showProfileModal = true" @logout="handleLogout">
+    <div class="practice-page">
         <header class="page-header">
           <div class="header-main">
             <div class="header-nav">
-              <el-button
-                v-if="isMobileNav"
-                circle
-                text
-                class="header-nav-btn"
-                :icon="Menu"
-                @click="toggleMobileNav()"
-              />
               <div v-if="selectedSubject" class="subject-chip">
                 <el-icon><Document /></el-icon>
                 <span>{{ selectedSubject.name }}</span>
@@ -349,13 +283,12 @@
           </div>
         </main>
       </div>
-    </div>
 
-    <ProfileModal
-      v-model:visible="showProfileModal"
-      :username="username"
-    />
-  </div>
+      <ProfileModal
+        v-model:visible="showProfileModal"
+        :username="username"
+      />
+</Layout>
 </template>
 
 <script setup>
@@ -363,6 +296,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import ProfileModal from '../components/ProfileModal.vue'
+import Layout from '../components/Layout/Layout.vue'
 import {
   Document,
   List,
@@ -380,7 +314,6 @@ import {
   CircleCloseFilled,
   ChatDotRound
 } from '@element-plus/icons-vue'
-import { useSidebarLayout } from '../composables/useSidebarLayout'
 import { useUser } from '../composables/useUser'
 import { getSubjects, getWrongQuestions, getQuestions, submitReviewAnswer, batchSubmitReviewAnswers, getAiExplanation, updateQuestionExplanation } from '../api'
 import { getErrorMessage } from '../utils/errorHandler'
@@ -388,7 +321,6 @@ import { clearAuthSession } from '../utils/authStorage'
 
 const router = useRouter()
 const route = useRoute()
-const { sidebarCollapsed, mobileNavOpen, isMobileNav, toggleSidebar, toggleMobileNav, closeMobileNav } = useSidebarLayout()
 const { username, avatar, loadUserInfo } = useUser()
 
 const showProfileModal = ref(false)
@@ -481,22 +413,7 @@ const getReviewSourceCountLabel = (subject) => {
   return `${count} 道错题`
 }
 
-const navItems = [
-  { path: '/', label: '练习模式', icon: Document },
-  { path: '/plan', label: '学习计划', icon: List },
-  { path: '/import', label: '导入习题', icon: Plus },
-  { path: '/review', label: '复习模式', icon: Refresh },
-  { path: '/trash', label: '垃圾桶', icon: Delete },
-  { path: '/settings', label: '设置', icon: Setting },
-]
 
-const goToPath = (path) => {
-  if (route.path === path) return
-  if (isMobileNav.value) {
-    mobileNavOpen.value = false
-  }
-  router.push(path)
-}
 
 const handleLogout = () => {
   clearAuthSession()

@@ -1,79 +1,9 @@
 <template>
-  <div class="app-layout friends-shell" :class="{ 'sidebar-collapsed': sidebarCollapsed, 'mobile-nav-open': mobileNavOpen }">
-    <div v-if="mobileNavOpen" class="mobile-nav-mask" @click="closeMobileNav"></div>
-
-    <nav class="sidebar app-sidebar-root">
-      <div class="app-sidebar-logo">
-        <el-icon class="app-sidebar-logo-icon"><Document /></el-icon>
-        <div class="app-sidebar-logo-copy">
-          <h2>题库管理系统</h2>
-          <span>Practice Workspace</span>
-        </div>
-        <el-button
-          v-if="isMobileNav"
-          circle
-          text
-          class="app-sidebar-mobile-close"
-          :icon="CloseBold"
-          @click="closeMobileNav"
-        />
-      </div>
-
-      <div class="app-sidebar-nav">
-        <div class="app-sidebar-section-title">功能导航</div>
-        <div
-          v-for="item in navItems"
-          :key="item.path"
-          class="app-sidebar-nav-item"
-          :class="{ active: route.path === item.path }"
-          @click="goToPath(item.path)"
-        >
-          <el-icon><component :is="item.icon" /></el-icon>
-          <span>{{ item.label }}</span>
-        </div>
-      </div>
-
-      <div class="app-sidebar-user">
-        <div class="app-sidebar-user-info">
-          <div
-            class="app-sidebar-avatar"
-            :style="{ background: avatar ? `url(${avatar}) center/cover` : undefined }"
-            @click="showProfileModal = true"
-          >
-            <template v-if="!avatar">{{ username.charAt(0).toUpperCase() }}</template>
-          </div>
-          <div class="app-sidebar-user-details">
-            <span class="app-sidebar-username">{{ username }}</span>
-            <span class="app-sidebar-logout" @click="handleLogout">退出登录</span>
-          </div>
-        </div>
-      </div>
-    </nav>
-
-    <div class="main-content">
-      <button
-        v-if="!isMobileNav"
-        type="button"
-        class="desktop-sidebar-handle"
-        :class="{ collapsed: sidebarCollapsed }"
-        :aria-label="sidebarCollapsed ? '展开导航栏' : '隐藏导航栏'"
-        @click="toggleSidebar"
-      >
-        {{ sidebarCollapsed ? '>' : '<' }}
-      </button>
-
-      <section class="friends-page">
+  <Layout ref="layoutRef" :username="username" :avatar="avatar" @show-profile="showProfileModal = true" @logout="handleLogout">
+    <section class="friends-page">
         <header class="page-header">
           <div class="header-main">
             <div class="header-nav">
-              <el-button
-                v-if="isMobileNav"
-                circle
-                text
-                class="header-nav-btn"
-                :icon="Menu"
-                @click="toggleMobileNav"
-              />
               <span class="header-pill">Real-Time Chat</span>
             </div>
             <h1>好友互动</h1>
@@ -81,7 +11,7 @@
           </div>
           <div class="header-actions">
             <el-button class="focus-action" :icon="Menu" @click="toggleWorkspaceSidebar">
-              {{ sidebarCollapsed ? '恢复导航' : '收起导航' }}
+              {{ layoutRef?.sidebarCollapsed?.value ? '恢复导航' : '收起导航' }}
             </el-button>
             <el-button type="primary" :icon="Plus" @click="openAddFriendDialog">添加好友</el-button>
             <el-button :icon="Bell" @click="activePane = 'requests'">
@@ -290,73 +220,72 @@
             </div>
           </section>
         </div>
-      </section>
-    </div>
 
-    <el-dialog v-model="showAddFriendDialog" title="通过好友 ID 添加" width="420px">
-      <div class="dialog-stack">
-        <el-input
-          v-model="searchCode"
-          maxlength="10"
-          placeholder="输入 10 位数字好友 ID"
-          @keyup.enter="handleSearchUser"
-        >
-          <template #append>
-            <el-button type="primary" @click="handleSearchUser">搜索</el-button>
-          </template>
-        </el-input>
+        <el-dialog v-model="showAddFriendDialog" title="通过好友 ID 添加" width="420px">
+          <div class="dialog-stack">
+            <el-input
+              v-model="searchCode"
+              maxlength="10"
+              placeholder="输入 10 位数字好友 ID"
+              @keyup.enter="handleSearchUser"
+            >
+              <template #append>
+                <el-button type="primary" @click="handleSearchUser">搜索</el-button>
+              </template>
+            </el-input>
 
-        <el-alert
-          v-if="searchError"
-          type="error"
-          :closable="false"
-          show-icon
-          :title="searchError"
-        />
+            <el-alert
+              v-if="searchError"
+              type="error"
+              :closable="false"
+              show-icon
+              :title="searchError"
+            />
 
-        <article v-if="searchResult" class="search-card">
-          <div class="request-head">
-            <el-avatar :size="48" :src="searchResult.avatar">{{ friendInitial(searchResult) }}</el-avatar>
-            <div>
-              <strong>{{ searchResult.username }}</strong>
-              <span>ID {{ searchResult.user_code }}</span>
-            </div>
+            <article v-if="searchResult" class="search-card">
+              <div class="request-head">
+                <el-avatar :size="48" :src="searchResult.avatar">{{ friendInitial(searchResult) }}</el-avatar>
+                <div>
+                  <strong>{{ searchResult.username }}</strong>
+                  <span>ID {{ searchResult.user_code }}</span>
+                </div>
+              </div>
+              <p>{{ searchResult.signature || '对方还没有填写签名。' }}</p>
+              <el-tag v-if="searchResult.friend_status === 'accepted'" type="success">已是好友</el-tag>
+              <el-tag v-else-if="searchResult.friend_status === 'pending'" type="warning">请求待处理</el-tag>
+              <el-button v-else type="primary" @click="handleSendRequest">发送好友请求</el-button>
+            </article>
           </div>
-          <p>{{ searchResult.signature || '对方还没有填写签名。' }}</p>
-          <el-tag v-if="searchResult.friend_status === 'accepted'" type="success">已是好友</el-tag>
-          <el-tag v-else-if="searchResult.friend_status === 'pending'" type="warning">请求待处理</el-tag>
-          <el-button v-else type="primary" @click="handleSendRequest">发送好友请求</el-button>
-        </article>
-      </div>
-    </el-dialog>
+        </el-dialog>
 
-    <el-dialog v-model="showShareDialog" title="分享习题集" width="460px">
-      <div class="dialog-stack">
-        <el-alert
-          type="info"
-          :closable="false"
-          show-icon
-          :title="selectedFriend ? `将题集分享给 ${selectedFriend.username}` : '请选择好友后再分享'"
-        />
-        <el-select v-model="selectedSubjectId" placeholder="选择要分享的习题集" style="width: 100%">
-          <el-option
-            v-for="subject in subjects"
-            :key="subject.id"
-            :label="`${subject.name} (${subject.question_count ?? 0} 题)`"
-            :value="subject.id"
-          />
-        </el-select>
-      </div>
-      <template #footer>
-        <el-button @click="showShareDialog = false">取消</el-button>
-        <el-button type="primary" :disabled="!selectedSubjectId || !selectedFriend" @click="handleShare">
-          确认分享
-        </el-button>
-      </template>
-    </el-dialog>
+        <el-dialog v-model="showShareDialog" title="分享习题集" width="460px">
+          <div class="dialog-stack">
+            <el-alert
+              type="info"
+              :closable="false"
+              show-icon
+              :title="selectedFriend ? `将题集分享给 ${selectedFriend.username}` : '请选择好友后再分享'"
+            />
+            <el-select v-model="selectedSubjectId" placeholder="选择要分享的习题集" style="width: 100%">
+              <el-option
+                v-for="subject in subjects"
+                :key="subject.id"
+                :label="`${subject.name} (${subject.question_count ?? 0} 题)`"
+                :value="subject.id"
+              />
+            </el-select>
+          </div>
+          <template #footer>
+            <el-button @click="showShareDialog = false">取消</el-button>
+            <el-button type="primary" :disabled="!selectedSubjectId || !selectedFriend" @click="handleShare">
+              确认分享
+            </el-button>
+          </template>
+        </el-dialog>
 
-    <ProfileModal v-model:visible="showProfileModal" :username="username" />
-  </div>
+        <ProfileModal v-model:visible="showProfileModal" :username="username" />
+      </section>
+</Layout>
 </template>
 
 <script setup>
@@ -395,25 +324,16 @@ import {
   shareSubject,
 } from '../api'
 import ProfileModal from '../components/ProfileModal.vue'
+import Layout from '../components/Layout/Layout.vue'
 import { useChatSocket } from '../composables/useChatSocket'
-import { useSidebarLayout } from '../composables/useSidebarLayout'
 import { useUser } from '../composables/useUser'
 import { clearAuthSession, getAuthUserId } from '../utils/authStorage'
 
 const route = useRoute()
 const router = useRouter()
-const { sidebarCollapsed, mobileNavOpen, isMobileNav, toggleSidebar, toggleMobileNav, closeMobileNav } = useSidebarLayout()
 const { username, avatar, loadUserInfo } = useUser()
 
-const navItems = [
-  { path: '/', label: '练习模式', icon: Document },
-  { path: '/friends', label: '好友互动', icon: User },
-  { path: '/plan', label: '学习计划', icon: List },
-  { path: '/import', label: '导入习题', icon: Plus },
-  { path: '/review', label: '复习模式', icon: Refresh },
-  { path: '/settings', label: '设置', icon: Setting },
-]
-
+const layoutRef = ref(null)
 const activePane = ref('friends')
 const friends = ref([])
 const pendingRequests = ref([])
@@ -646,11 +566,11 @@ const socketStatusText = computed(() => {
 })
 
 const toggleWorkspaceSidebar = () => {
-  sidebarCollapsed.value = !sidebarCollapsed.value
+  layoutRef.value?.toggleSidebar()
 }
 
 const goToPath = (path) => {
-  closeMobileNav()
+  layoutRef.value?.closeMobileNav()
   router.push(path)
 }
 
@@ -839,9 +759,9 @@ watch(showShareDialog, (visible) => {
 })
 
 onMounted(async () => {
-  previousSidebarState.value = sidebarCollapsed.value
-  sidebarCollapsed.value = false
-  closeMobileNav()
+  previousSidebarState.value = layoutRef.value?.sidebarCollapsed?.value || false
+  layoutRef.value?.toggleSidebar()
+  layoutRef.value?.closeMobileNav()
   await loadUserInfo()
   currentUserId.value = Number(getAuthUserId()) || currentUserId.value
   await Promise.all([loadFriendsData(), loadPendingData(), loadShareData()])
@@ -851,7 +771,9 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   closeChat()
   disconnect()
-  sidebarCollapsed.value = previousSidebarState.value
+  if (previousSidebarState.value && !layoutRef.value?.sidebarCollapsed?.value) {
+    layoutRef.value?.toggleSidebar()
+  }
 })
 </script>
 

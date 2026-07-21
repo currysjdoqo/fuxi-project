@@ -16,7 +16,7 @@ database/
 node_modules/
 /dist/
 build/
-!/frontend/dist/
+frontend/dist/
 .DS_Store
 *.log
 
@@ -62,3 +62,5 @@ home_old.txt
 
 # Deploy package
 fuxi-deploy.zip
+deploy.py
+deploy.sh

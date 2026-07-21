@@ -2,14 +2,6 @@
   <Layout ref="layoutRef" :username="username" :avatar="avatar" @show-profile="showProfileModal = true" @logout="handleLogout">
     <div class="trash-page">
         <header class="page-header">
-          <el-button
-            v-if="isMobileNav"
-            circle
-            text
-            class="header-nav-btn"
-            :icon="Menu"
-            @click="toggleMobileNav"
-          />
           <div>
             <h1>垃圾桶</h1>
             <p>删除的题目会先保留在这里，可以恢复；永久删除后不可找回。</p>

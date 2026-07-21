@@ -98,7 +98,12 @@ onUnmounted(() => {
 })
 
 defineExpose({
-  toggleMobileNav
+  toggleMobileNav,
+  toggleSidebar,
+  closeMobileNav,
+  sidebarCollapsed,
+  mobileNavOpen,
+  isMobileNav
 })
 </script>
 

@@ -92,7 +92,14 @@ async def handle_send_message(websocket: WebSocket, user_id: int, payload: dict)
 
 @router.websocket("/ws/chat")
 async def chat_websocket(websocket: WebSocket):
-    token = (websocket.query_params.get("token") or "").strip()
+    protocols = websocket.headers.get("sec-websocket-protocol", "")
+    token = ""
+    for protocol in protocols.split(","):
+        protocol = protocol.strip()
+        if protocol.startswith("Bearer "):
+            token = protocol.split(" ", 1)[1].strip()
+            break
+
     if not token:
         await websocket.close(code=4401)
         return
@@ -106,6 +113,8 @@ async def chat_websocket(websocket: WebSocket):
     if not user:
         await websocket.close(code=4401)
         return
+
+    await websocket.accept(subprotocol=f"Bearer {token}")
 
     await chat_manager.connect(user.id, websocket)
     await websocket.send_json({"type": "connection.ready", "user_id": user.id})

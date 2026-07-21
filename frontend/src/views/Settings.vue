@@ -1,81 +1,9 @@
 <template>
-  <div class="app-layout" :class="{ 'sidebar-collapsed': sidebarCollapsed, 'mobile-nav-open': mobileNavOpen }">
-    <div v-if="mobileNavOpen" class="mobile-nav-mask" @click="closeMobileNav"></div>
-
-    <nav class="sidebar" :class="{ collapsed: sidebarCollapsed, open: mobileNavOpen }">
-      <div class="logo-section">
-        <div class="logo-group">
-          <el-icon class="logo-icon"><Document /></el-icon>
-          <div class="logo-copy">
-            <h2>习题管理系统</h2>
-            <span>学习与账户中心</span>
-          </div>
-        </div>
-        <el-button
-          v-if="isMobileNav"
-          circle
-          text
-          class="sidebar-toggle mobile-close"
-          :icon="Close"
-          @click="closeMobileNav"
-        />
-      </div>
-
-      <div class="nav-menu">
-        <div class="nav-section-title">功能导航</div>
-        <div
-          v-for="item in navItems"
-          :key="item.path"
-          class="nav-item"
-          :class="{ active: route.path === item.path }"
-          @click="goToPath(item.path)"
-        >
-          <el-icon><component :is="item.icon" /></el-icon>
-          <span>{{ item.label }}</span>
-        </div>
-      </div>
-
-      <div class="user-section">
-        <div class="user-info">
-          <div
-            class="avatar"
-            :style="{ background: avatar ? `url(${avatar}) center/cover` : undefined }"
-            @click="showProfileModal = true"
-          >
-            <template v-if="!avatar">{{ username.charAt(0).toUpperCase() }}</template>
-          </div>
-          <div class="user-details">
-            <span class="username">{{ username }}</span>
-            <span class="logout-btn" @click="handleLogout">退出登录</span>
-          </div>
-        </div>
-      </div>
-    </nav>
-
-    <div class="main-content">
-      <button
-        v-if="!isMobileNav"
-        type="button"
-        class="desktop-sidebar-handle"
-        :class="{ collapsed: sidebarCollapsed }"
-        :aria-label="sidebarCollapsed ? '展开导航栏' : '隐藏导航栏'"
-        @click="toggleSidebar"
-      >
-        {{ sidebarCollapsed ? '>' : '<' }}
-      </button>
-
-      <div class="settings-page">
+  <Layout :username="username" :avatar="avatar" @show-profile="showProfileModal = true" @logout="handleLogout">
+    <div class="settings-page">
         <header class="page-header">
           <div class="header-main">
             <div class="header-nav">
-              <el-button
-                v-if="isMobileNav"
-                circle
-                text
-                class="header-nav-btn"
-                :icon="Menu"
-                @click="toggleMobileNav"
-              />
               <div class="header-chip">账户设置</div>
             </div>
             <h1>设置中心</h1>
@@ -358,23 +286,22 @@
             </article>
           </section>
         </main>
-      </div>
-    </div>
 
-    <ProfileModal
-      v-model:visible="showProfileModal"
-      :username="username"
-    />
+        <ProfileModal
+        v-model:visible="showProfileModal"
+        :username="username"
+      />
 
-    <el-dialog v-model="paymentDialogVisible" title="微信扫码支付" width="360px" destroy-on-close>
-      <div class="wechat-dialog">
-        <img v-if="wechatQrImageUrl" :src="wechatQrImageUrl" alt="微信支付二维码" class="wechat-qr" />
-        <el-empty v-else description="当前没有可展示的微信支付二维码" />
-        <p>请使用微信扫描二维码完成支付，支付完成后可返回本页刷新订单状态。</p>
-        <p v-if="currentPayment?.order_no">订单号：{{ currentPayment.order_no }}</p>
+      <el-dialog v-model="paymentDialogVisible" title="微信扫码支付" width="360px" destroy-on-close>
+        <div class="wechat-dialog">
+          <img v-if="wechatQrImageUrl" :src="wechatQrImageUrl" alt="微信支付二维码" class="wechat-qr" />
+          <el-empty v-else description="当前没有可展示的微信支付二维码" />
+          <p>请使用微信扫描二维码完成支付，支付完成后可返回本页刷新订单状态。</p>
+          <p v-if="currentPayment?.order_no">订单号：{{ currentPayment.order_no }}</p>
+        </div>
+      </el-dialog>
       </div>
-    </el-dialog>
-  </div>
+</Layout>
 </template>
 
 <script setup>
@@ -404,24 +331,13 @@ import {
   saveWrongThreshold
 } from '../api'
 import ProfileModal from '../components/ProfileModal.vue'
-import { useSidebarLayout } from '../composables/useSidebarLayout'
+import Layout from '../components/Layout/Layout.vue'
 import { useUser } from '../composables/useUser'
 import { clearAuthSession } from '../utils/authStorage'
 
 const router = useRouter()
 const route = useRoute()
-const { sidebarCollapsed, mobileNavOpen, isMobileNav, toggleSidebar, toggleMobileNav, closeMobileNav } = useSidebarLayout()
 const { username, avatar, loadUserInfo } = useUser()
-
-const navItems = [
-  { path: '/', label: '练习模式', icon: Document },
-  { path: '/plan', label: '学习计划', icon: List },
-  { path: '/import', label: '导入习题', icon: Plus },
-  { path: '/review', label: '复习模式', icon: Refresh },
-  { path: '/trash', label: '垃圾桶', icon: Delete },
-  { path: '/friends', label: '好友互动', icon: UserFilled },
-  { path: '/settings', label: '设置中心', icon: Setting }
-]
 
 const paymentProviders = [
   { value: 'alipay', label: '支付宝' },
@@ -481,7 +397,6 @@ const goToPath = (path) => {
   if (route.path !== path) {
     router.push(path)
   }
-  closeMobileNav()
 }
 
 const handleLogout = () => {
