@@ -9,7 +9,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - ALLOWED_ORIGINS=http://localhost:80,http://localhost,http://127.0.0.1,http://43.108.18.169,http://43.108.18.169:80
+      - ALLOWED_ORIGINS=http://localhost:80,http://localhost,http://127.0.0.1,http://43.108.18.169,http://43.108.18.169:80,http://43.108.18.169:8000,https://43.108.18.169
       - WRONG_QUESTION_REMOVE_THRESHOLD=${WRONG_QUESTION_REMOVE_THRESHOLD:-5}
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
     volumes:
