@@ -75,16 +75,24 @@ def start_backend(project_dir):
     """Start the FastAPI backend."""
     print("\n[INFO] Starting backend service...")
 
-    if is_port_in_use(BACKEND_PORT):
-        print(f"[ERROR] Port {BACKEND_PORT} is already in use.")
-        return None
+    backend_port = BACKEND_PORT
+    if is_port_in_use(backend_port):
+        print(f"[WARNING] Port {BACKEND_PORT} is already in use, trying other ports...")
+        for port in range(BACKEND_PORT + 1, BACKEND_PORT + 20):
+            if not is_port_in_use(port):
+                backend_port = port
+                print(f"[INFO] Using port {backend_port} instead.")
+                break
+        else:
+            print(f"[ERROR] No available port found in range {BACKEND_PORT+1}-{BACKEND_PORT+20}.")
+            return None
 
     venv_python = os.path.join(project_dir, ".venv", "Scripts", "python.exe")
     if not os.path.exists(venv_python):
         print(f"[ERROR] Virtual environment Python not found: {venv_python}")
         return None
 
-    cmd = f'"{venv_python}" -m uvicorn main:app --host 127.0.0.1 --port {BACKEND_PORT} --reload'
+    cmd = f'"{venv_python}" -m uvicorn main:app --host 127.0.0.1 --port {backend_port} --reload'
     proc = run_command(cmd, cwd=project_dir, name="Backend")
 
     timeout = 10
