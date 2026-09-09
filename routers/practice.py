@@ -8,11 +8,27 @@ from sqlalchemy.orm import Session
 
 from auth import get_current_user
 from database import get_db
-from models import PracticeRecord, Question, Subject, User, WrongQuestion
+from models import Chapter, PracticeRecord, Question, Subject, User, WrongQuestion
 from routers.settings import get_wrong_question_threshold
 from schemas import QuestionOut
 
 router = APIRouter()
+
+
+def apply_chapter_filter(query, db: Session, current_user: User, chapter_id: Optional[int]):
+    """按章节过滤题目。chapter_id 为 0 表示未分章，正数表示指定章节。"""
+    if chapter_id is None:
+        return query
+    if chapter_id == 0:
+        return query.filter(Question.chapter_id.is_(None) | (Question.chapter_id == 0))
+
+    chapter = db.query(Chapter).filter(
+        Chapter.id == chapter_id,
+        Chapter.user_id == current_user.id,
+    ).first()
+    if not chapter:
+        raise HTTPException(status_code=404, detail="章节不存在")
+    return query.filter(Question.chapter_id == chapter_id)
 
 
 class SubmitRequest(BaseModel):
@@ -131,6 +147,7 @@ def get_questions(
     subject_id: Optional[int] = None,
     question_type: Optional[str] = None,
     important_only: bool = False,
+    chapter_id: Optional[int] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -140,6 +157,7 @@ def get_questions(
         if not subject:
             raise HTTPException(status_code=404, detail="科目不存在")
         query = query.filter(Question.subject_id == subject_id)
+    query = apply_chapter_filter(query, db, current_user, chapter_id)
     if question_type and question_type != "all":
         query = query.filter(Question.type == normalize_question_type(question_type))
     if important_only:
@@ -152,6 +170,7 @@ def get_questions_summary(
     subject_id: Optional[int] = None,
     question_type: Optional[str] = None,
     important_only: bool = False,
+    chapter_id: Optional[int] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -161,6 +180,7 @@ def get_questions_summary(
         if not subject:
             raise HTTPException(status_code=404, detail="科目不存在")
         query = query.filter(Question.subject_id == subject_id)
+    query = apply_chapter_filter(query, db, current_user, chapter_id)
     if question_type and question_type != "all":
         query = query.filter(Question.type == normalize_question_type(question_type))
     if important_only:
@@ -168,7 +188,7 @@ def get_questions_summary(
 
     total = query.count()
     questions = query.order_by(Question.id.asc()).all()
-    
+
     return {
         "total": total,
         "questions": [
@@ -177,7 +197,8 @@ def get_questions_summary(
                 "content": q.content[:50] + "..." if len(q.content) > 50 else q.content,
                 "type": q.type,
                 "is_important": q.is_important,
-                "subject_id": q.subject_id
+                "subject_id": q.subject_id,
+                "chapter_id": q.chapter_id
             }
             for q in questions
         ]

@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 
 class SubjectOut(BaseModel):
@@ -47,7 +47,10 @@ class QuestionOut(BaseModel):
 
     # 科目/分类 ID
     subject_id: Optional[int] = None
-    
+
+    # 章节 ID（NULL 表示未分章）
+    chapter_id: Optional[int] = None
+
     # 题型：single / judge / fill / short
     type: str
     
@@ -62,6 +65,9 @@ class QuestionOut(BaseModel):
     
     # 答案解析（可选）
     explanation: Optional[str] = None
+
+    # AI 知识点标签
+    knowledge_tags: Optional[List[str]] = None
 
     # 是否重点题
     is_important: int = 0

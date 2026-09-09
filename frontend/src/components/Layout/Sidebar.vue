@@ -55,7 +55,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Close, Delete, Document, List, Plus, Refresh, Setting, UserFilled } from '@element-plus/icons-vue'
+import { Close, Delete, Document, List, Notebook, Plus, Refresh, Setting, UserFilled } from '@element-plus/icons-vue'
 
 defineProps({
   sidebarCollapsed: {
@@ -90,6 +90,7 @@ const defaultNavItems = [
   { path: '/', label: '练习模式', icon: Document },
   { path: '/plan', label: '学习计划', icon: List },
   { path: '/import', label: '导入习题', icon: Plus },
+  { path: '/chapters', label: '章节复习', icon: Notebook },
   { path: '/review', label: '复习模式', icon: Refresh },
   { path: '/trash', label: '垃圾桶', icon: Delete },
   { path: '/friends', label: '好友互动', icon: UserFilled },

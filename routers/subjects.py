@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from auth import get_current_user
 from database import get_db
-from models import PracticeRecord, Question, Subject, User, WrongQuestion
+from models import Chapter, PracticeRecord, Question, Subject, User, WrongQuestion
 
 router = APIRouter()
 
@@ -116,6 +116,10 @@ def delete_subject(subject_id: int, db: Session = Depends(get_db), current_user:
             synchronize_session=False
         )
         db.query(Question).filter(Question.id.in_(question_ids), Question.user_id == current_user.id).delete(synchronize_session=False)
+
+    db.query(Chapter).filter(Chapter.subject_id == subject_id, Chapter.user_id == current_user.id).delete(
+        synchronize_session=False
+    )
 
     db.delete(subject)
     db.commit()

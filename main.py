@@ -17,6 +17,7 @@ Base.metadata.create_all(bind=engine)
 migrate_all_tables()
 
 from routers.auth import router as auth_router
+from routers.chapters import router as chapters_router
 from routers.export import router as export_router
 from routers.ai import router as ai_router
 from routers.billing import router as billing_router
@@ -74,6 +75,7 @@ app.include_router(wrong_router, prefix="/api")
 app.include_router(review_router, prefix="/api")
 app.include_router(settings_router, prefix="/api")
 app.include_router(subjects_router, prefix="/api")
+app.include_router(chapters_router, prefix="/api")
 app.include_router(trash_router, prefix="/api")
 app.include_router(plan_router, prefix="/api")
 app.include_router(export_router, prefix="/api")

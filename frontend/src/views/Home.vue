@@ -66,7 +66,36 @@
         <template v-else>
           <section class="type-filter">
             <div class="practice-toolbar">
-              <el-segmented v-model="selectedQuestionType" :options="questionTypeOptions" @change="loadQuestions" />
+              <div class="practice-filter-controls">
+                <el-segmented v-model="selectedQuestionType" :options="questionTypeOptions" @change="loadQuestions" />
+                <el-select
+                  v-model="selectedChapterId"
+                  class="chapter-filter-select"
+                  @change="loadQuestions"
+                >
+                  <el-option label="全部章节" value="all" />
+                  <el-option label="未分章" :value="0" />
+                  <el-option
+                    v-for="chapter in chapters"
+                    :key="chapter.id"
+                    :label="`${chapter.name}（${chapter.question_count}题）`"
+                    :value="chapter.id"
+                  />
+                </el-select>
+                <el-button :icon="Plus" size="small" :loading="chapterCreating" @click="handleCreateChapter">
+                  新建章节
+                </el-button>
+                <el-button
+                  v-if="selectedChapterId !== 'all' && selectedChapterId !== 0"
+                  :icon="Delete"
+                  size="small"
+                  type="danger"
+                  plain
+                  @click="handleDeleteChapter"
+                >
+                  删除章节
+                </el-button>
+              </div>
               <div class="practice-mode-controls">
                 <el-radio-group v-model="practiceMode" @change="applyPracticeQuestions()">
                   <el-radio-button label="sequential">顺序练习</el-radio-button>
@@ -130,6 +159,18 @@
                 <span>已选 {{ batchSelectedIds.length }}</span>
                 <el-button size="small" @click="selectAllForBatch">全选</el-button>
                 <el-button size="small" @click="batchSelectedIds = []">清空</el-button>
+                <el-select v-model="moveTargetChapterId" size="small" class="batch-chapter-select">
+                  <el-option label="移到：未分章" :value="0" />
+                  <el-option
+                    v-for="chapter in chapters"
+                    :key="chapter.id"
+                    :label="`移到：${chapter.name}`"
+                    :value="chapter.id"
+                  />
+                </el-select>
+                <el-button size="small" type="primary" plain :disabled="!batchSelectedIds.length" :loading="chapterMoving" @click="batchMoveToChapter">
+                  移动到章节
+                </el-button>
                 <el-button size="small" type="danger" :disabled="!batchSelectedIds.length" :loading="batchDeleting" @click="batchDeleteSelected">
                   批量删除
                 </el-button>
@@ -451,15 +492,19 @@ import { clearAuthSession } from '../utils/authStorage'
 import {
   batchDeleteQuestions,
   batchSubmitAnswers,
+  createChapter,
   createSubject,
+  deleteChapter,
   deleteSubject as apiDeleteSubject,
   deleteQuestion as apiDeleteQuestion,
   getAiExplanation,
+  getChapters,
   getPlanItemsByDate,
   getQuestionDetail,
   getQuestions,
   getQuestionsSummary,
   getSubjects,
+  moveQuestionsToChapter,
   submitAnswer as apiSubmitAnswer,
   updateQuestionExplanation,
   updatePlanItem,
@@ -480,6 +525,11 @@ const selectedSubject = ref(null)
 const newSubjectName = ref('')
 const subjectCreating = ref(false)
 const subjectDeletingId = ref(null)
+const chapters = ref([])
+const selectedChapterId = ref('all')
+const chapterCreating = ref(false)
+const chapterMoving = ref(false)
+const moveTargetChapterId = ref(0)
 const allQuestions = ref([])
 const questions = ref([])
 const questionDetailCache = ref({})
@@ -861,9 +911,100 @@ const handleCreateSubject = async () => {
   }
 }
 
+const loadChapters = async () => {
+  if (!selectedSubject.value) {
+    chapters.value = []
+    return
+  }
+  try {
+    chapters.value = await getChapters(selectedSubject.value.id)
+  } catch (error) {
+    chapters.value = []
+  }
+}
+
+const handleCreateChapter = async () => {
+  if (!selectedSubject.value) return
+  try {
+    const { value } = await ElMessageBox.prompt(
+      '请输入章节名称，例如：第1章 绪论',
+      '新建章节',
+      {
+        confirmButtonText: '创建',
+        cancelButtonText: '取消',
+        inputPlaceholder: '章节名称'
+      }
+    )
+    const name = (value || '').trim()
+    if (!name) {
+      ElMessage.warning('章节名称不能为空')
+      return
+    }
+    chapterCreating.value = true
+    const chapter = await createChapter(selectedSubject.value.id, name)
+    await loadChapters()
+    selectedChapterId.value = chapter.id
+    await loadQuestions()
+    ElMessage.success(`章节「${name}」已创建，可在删题模式中勾选题目批量移入该章节`)
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error(`创建章节失败：${error.response?.data?.detail || error.message}`)
+    }
+  } finally {
+    chapterCreating.value = false
+  }
+}
+
+const handleDeleteChapter = async () => {
+  if (selectedChapterId.value === 'all' || selectedChapterId.value === 0) return
+  const chapter = chapters.value.find((item) => item.id === selectedChapterId.value)
+  try {
+    await ElMessageBox.confirm(
+      `确认删除章节「${chapter?.name || ''}」？章节下的题目不会删除，会变为未分章。`,
+      '删除章节',
+      {
+        type: 'warning',
+        confirmButtonText: '确认删除',
+        cancelButtonText: '取消'
+      }
+    )
+    await deleteChapter(selectedChapterId.value)
+    selectedChapterId.value = 'all'
+    await loadChapters()
+    await loadQuestions()
+    ElMessage.success('章节已删除，题目已移至未分章')
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error(`删除章节失败：${error.response?.data?.detail || error.message}`)
+    }
+  }
+}
+
+const batchMoveToChapter = async () => {
+  if (!batchSelectedIds.value.length) return
+  if (moveTargetChapterId.value === null || moveTargetChapterId.value === undefined) {
+    ElMessage.warning('请先选择要移动到的章节')
+    return
+  }
+  chapterMoving.value = true
+  try {
+    const result = await moveQuestionsToChapter(moveTargetChapterId.value, batchSelectedIds.value)
+    ElMessage.success(result.message || '题目已移动')
+    batchSelectedIds.value = []
+    await loadChapters()
+    await loadQuestions()
+  } catch (error) {
+    ElMessage.error(`移动题目失败：${error.response?.data?.detail || error.message}`)
+  } finally {
+    chapterMoving.value = false
+  }
+}
+
 const enterSubject = async (subject) => {
   selectedSubject.value = subject
+  selectedChapterId.value = 'all'
   router.replace({ path: '/', query: { subject_id: subject.id } })
+  await loadChapters()
   await loadQuestions()
 }
 
@@ -883,6 +1024,8 @@ const handleDeleteSubject = async (subject) => {
     await apiDeleteSubject(subject.id)
     if (selectedSubject.value?.id === subject.id) {
       selectedSubject.value = null
+      chapters.value = []
+      selectedChapterId.value = 'all'
       questions.value = []
       answers.value = {}
       batchSelectedIds.value = []
@@ -902,6 +1045,8 @@ const handleDeleteSubject = async (subject) => {
 
 const backToSubjects = () => {
   selectedSubject.value = null
+  chapters.value = []
+  selectedChapterId.value = 'all'
   allQuestions.value = []
   questions.value = []
   router.replace({ path: '/' })
@@ -913,7 +1058,8 @@ const loadQuestions = async () => {
   if (!selectedSubject.value) return
   try {
     questionDetailCache.value = {}
-    const result = await getQuestionsSummary(selectedSubject.value.id, selectedQuestionType.value)
+    const chapterParam = selectedChapterId.value === 'all' ? null : selectedChapterId.value
+    const result = await getQuestionsSummary(selectedSubject.value.id, selectedQuestionType.value, false, chapterParam)
     allQuestions.value = result.questions || []
     if (allQuestions.value.length && practiceQuestionCount.value > allQuestions.value.length) {
       practiceQuestionCount.value = allQuestions.value.length
@@ -1346,6 +1492,8 @@ onMounted(async () => {
     const subject = subjects.value.find((item) => item.id === subjectId)
     if (subject) {
       selectedSubject.value = subject
+      selectedChapterId.value = 'all'
+      await loadChapters()
       await loadQuestions()
     }
   }
@@ -1646,6 +1794,21 @@ onUnmounted(() => {
   border: 1px solid rgba(125, 86, 63, 0.12);
   background: rgba(255, 252, 247, 0.92);
   box-shadow: 0 16px 32px rgba(96, 70, 50, 0.08);
+}
+
+.practice-filter-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.chapter-filter-select {
+  width: 190px;
+}
+
+.batch-chapter-select {
+  width: 150px;
 }
 
 .practice-mode-controls {

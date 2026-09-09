@@ -13,6 +13,30 @@ ANSWER_RE = re.compile(r"(正确答案|参考答案|答案)\s*[:：]\s*(.*)")
 EXPLANATION_RE = re.compile(r"^答案解析\s*[:：]\s*(.*)$")
 HEADER_RE = re.compile(r"^\s*(?:[一二三四五六七八九十]+[.．、]\s*)?(单选题|多选题|多项选择题|选择题|判断题|填空题|简答题|编程题).*")
 
+# 章节标题：第一章 绪论 / 第1章 绪论 / 第3章 / Chapter 2 xxx / 1.1 xxx / 一、绪论
+CHAPTER_TITLE_RES = [
+    re.compile(r"^\s*第\s*[0-9零一二三四五六七八九十百]+\s*[章节篇部](?:\s*[:：、.\-－—]\s*|\s+).+$"),
+    re.compile(r"^\s*第\s*[0-9零一二三四五六七八九十百]+\s*[章节篇部]\s*$"),
+    re.compile(r"^\s*chapter\s+\d+(?:\s*[:：.\-－—]\s*|\s+).+$", re.IGNORECASE),
+    re.compile(r"^\s*\d+\.\d+(?:\.\d+)?(?:\s*[:：、.\-－—]\s*|\s+).+$"),
+    re.compile(r"^\s*[一二三四五六七八九十]+\s*[、.．]\s*.+$"),
+]
+
+CHAPTER_TITLE_MAX_LEN = 40
+
+
+def _match_chapter_title(line: str) -> str | None:
+    """识别章节标题行，返回章节名；不是标题返回 None。"""
+    if len(line) > CHAPTER_TITLE_MAX_LEN or "?" in line or "？" in line:
+        return None
+    # 题型分组标题（如“一、单选题（共10题）”）不是章节
+    if _type_from_header(line) and HEADER_RE.match(line):
+        return None
+    for pattern in CHAPTER_TITLE_RES:
+        if pattern.match(line):
+            return line.strip()
+    return None
+
 TYPE_LABELS = {
     "single": "单选题",
     "multi": "多选题",
@@ -128,6 +152,7 @@ def parse_exercise_text(text: str) -> List[dict]:
     questions: list[dict] = []
     current: dict | None = None
     current_section_type = "single"
+    current_chapter_name: str | None = None
     mode = "idle"
     last_option: str | None = None
 
@@ -141,6 +166,16 @@ def parse_exercise_text(text: str) -> List[dict]:
             current_section_type = header_type
             continue
 
+        # 章节标题（如“第一章 绪论”“1.1 什么是机器学习”）：切换当前章节，后续题目自动归属
+        chapter_title = _match_chapter_title(line)
+        if chapter_title:
+            _finish_question(current, questions)
+            current = None
+            current_chapter_name = chapter_title
+            mode = "idle"
+            last_option = None
+            continue
+
         if QUESTION_NO_RE.match(line):
             _finish_question(current, questions)
             current = {
@@ -150,6 +185,7 @@ def parse_exercise_text(text: str) -> List[dict]:
                 "answer": "",
                 "_answer_lines": [],
                 "explanation": [],
+                "chapter_name": current_chapter_name,
             }
             mode = "content"
             last_option = None
@@ -166,6 +202,7 @@ def parse_exercise_text(text: str) -> List[dict]:
                 "answer": "",
                 "_answer_lines": [],
                 "explanation": [],
+                "chapter_name": current_chapter_name,
             }
             mode = "content"
             last_option = None

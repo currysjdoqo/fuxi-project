@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import JSON, Column, DateTime, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import JSON, Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 
 from database import Base
 
@@ -37,17 +37,36 @@ class Subject(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class Chapter(Base):
+    __tablename__ = "chapters"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=True)
+    subject_id = Column(Integer, ForeignKey("subjects.id"), index=True, nullable=False)
+    name = Column(String, index=True, nullable=False)
+    sort_order = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    # AI 知识点提炼缓存
+    summary_md = Column(Text, nullable=True)
+    outline_json = Column(JSON, nullable=True)
+    tags_generated_at = Column(DateTime, nullable=True)
+    summary_generated_at = Column(DateTime, nullable=True)
+    outline_generated_at = Column(DateTime, nullable=True)
+
+
 class Question(Base):
     __tablename__ = "questions"
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=True)
     subject_id = Column(Integer, ForeignKey("subjects.id"), index=True, nullable=True)
+    chapter_id = Column(Integer, ForeignKey("chapters.id"), index=True, nullable=True)
     type = Column(String, index=True)
     content = Column(String, index=True)
     options = Column(JSON)
     answer = Column(String)
     explanation = Column(String)
+    knowledge_tags = Column(JSON, nullable=True)
     is_important = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
     deleted_at = Column(DateTime, nullable=True)

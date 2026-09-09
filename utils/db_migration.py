@@ -59,10 +59,52 @@ def migrate_users_table():
         print(f"已为 users 表添加字段: {', '.join(added)}")
 
 
+def migrate_questions_table():
+    inspector = inspect(engine)
+    if not inspector.has_table('questions'):
+        return
+
+    columns = [col['name'] for col in inspector.get_columns('questions')]
+    if 'chapter_id' not in columns:
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE questions ADD COLUMN chapter_id INTEGER"))
+            conn.commit()
+        print("已为 questions 表添加字段: chapter_id")
+
+    if 'knowledge_tags' not in columns:
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE questions ADD COLUMN knowledge_tags JSON"))
+            conn.commit()
+        print("已为 questions 表添加字段: knowledge_tags")
+
+
+def migrate_chapters_table():
+    inspector = inspect(engine)
+    if not inspector.has_table('chapters'):
+        return
+
+    columns = [col['name'] for col in inspector.get_columns('chapters')]
+    new_columns = {
+        'summary_md': 'TEXT',
+        'outline_json': 'JSON',
+        'tags_generated_at': 'DATETIME',
+        'summary_generated_at': 'DATETIME',
+        'outline_generated_at': 'DATETIME',
+    }
+    for col_name, col_type in new_columns.items():
+        if col_name not in columns:
+            with engine.connect() as conn:
+                conn.execute(text(f"ALTER TABLE chapters ADD COLUMN {col_name} {col_type}"))
+                conn.commit()
+            print(f"已为 chapters 表添加字段: {col_name}")
+
+
 def migrate_all_tables():
     try:
         print("开始数据库迁移检查...")
         migrate_users_table()
+        migrate_questions_table()
+        migrate_chapters_table()
         print("数据库迁移检查完成")
     except Exception as e:
         print(f"数据库迁移检查跳过（可能是新数据库）: {e}")

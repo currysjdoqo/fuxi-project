@@ -14,6 +14,7 @@ QUESTION_TYPES = {
 
 
 COLUMNS = [
+    {"key": "chapter", "name": "章节", "width": 20, "required": False, "hint": "选填，如：第1章 绪论"},
     {"key": "type", "name": "题型", "width": 12, "required": True, "hint": "single/multi/judge/fill/short"},
     {"key": "content", "name": "题干", "width": 60, "required": True, "hint": "题目内容"},
     {"key": "option_a", "name": "选项A", "width": 30, "required": False, "hint": "选择题填写"},
@@ -71,6 +72,7 @@ def generate_excel_template() -> BytesIO:
 
     examples = [
         {
+            "chapter": "第1章 绪论",
             "type": "single",
             "content": "下列哪个选项是正确的？",
             "option_a": "选项A内容",
@@ -81,6 +83,7 @@ def generate_excel_template() -> BytesIO:
             "explanation": "本题考查基础概念，根据知识点X，C选项是正确答案。",
         },
         {
+            "chapter": "第1章 绪论",
             "type": "multi",
             "content": "下列哪些选项是正确的？（多选）",
             "option_a": "选项A（正确）",
@@ -91,18 +94,21 @@ def generate_excel_template() -> BytesIO:
             "explanation": "本题考查多个知识点，ABD三个选项都符合条件。",
         },
         {
+            "chapter": "第2章 基础语法",
             "type": "judge",
             "content": "Python是一种解释型编程语言。",
             "answer": "T",
             "explanation": "Python确实是解释型语言，不需要编译即可运行。",
         },
         {
+            "chapter": "第2章 基础语法",
             "type": "fill",
             "content": "TCP/IP协议中，TCP是______层协议，IP是______层协议。",
             "answer": "传输；网络",
             "explanation": "TCP属于传输层，负责可靠传输；IP属于网络层，负责路由和寻址。",
         },
         {
+            "chapter": "第3章 进阶",
             "type": "short",
             "content": "请简述什么是面向对象编程及其三大特性。",
             "answer": "面向对象编程是一种编程范式，将数据和操作数据的方法封装在一起。三大特性：封装、继承、多态。",
@@ -166,6 +172,7 @@ def parse_excel_to_questions(file_bytes: bytes) -> list:
 
             answer = row_data["answer"]
             explanation = row_data["explanation"]
+            chapter_name = row_data.get("chapter", "").strip()
 
             if not answer and q_type not in ["short", "fill"]:
                 errors.append(f"第{row_idx}行：答案不能为空")
@@ -177,6 +184,7 @@ def parse_excel_to_questions(file_bytes: bytes) -> list:
                 "options": options,
                 "answer": answer,
                 "explanation": explanation,
+                "chapter_name": chapter_name,
             })
         except Exception as e:
             errors.append(f"第{row_idx}行：解析错误 - {str(e)}")
@@ -227,6 +235,7 @@ def parse_csv_to_questions(file_bytes: bytes, encoding: str = "utf-8-sig") -> li
 
             answer = row.get("答案", "").strip() or row.get("answer", "").strip()
             explanation = row.get("解析", "").strip() or row.get("explanation", "").strip()
+            chapter_name = row.get("章节", "").strip() or row.get("chapter", "").strip() or row.get("chapter_name", "").strip()
 
             if not answer and q_type not in ["short", "fill"]:
                 errors.append(f"第{row_idx}行：答案不能为空")
@@ -239,6 +248,7 @@ def parse_csv_to_questions(file_bytes: bytes, encoding: str = "utf-8-sig") -> li
                 "options": options,
                 "answer": answer,
                 "explanation": explanation,
+                "chapter_name": chapter_name,
             })
         except Exception as e:
             errors.append(f"第{row_idx}行：解析错误 - {str(e)}")
@@ -290,6 +300,7 @@ def parse_json_to_questions(file_bytes: bytes) -> list:
 
             answer = str(item.get("answer", "")).strip()
             explanation = str(item.get("explanation", "")).strip()
+            chapter_name = str(item.get("chapter_name", "") or item.get("chapter", "")).strip()
 
             if not answer and q_type not in ["short", "fill"]:
                 errors.append(f"第{idx}条：答案不能为空")
@@ -301,6 +312,7 @@ def parse_json_to_questions(file_bytes: bytes) -> list:
                 "options": options,
                 "answer": answer,
                 "explanation": explanation,
+                "chapter_name": chapter_name,
             })
         except Exception as e:
             errors.append(f"第{idx}条：解析错误 - {str(e)}")

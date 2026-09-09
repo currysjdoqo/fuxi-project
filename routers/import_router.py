@@ -1,15 +1,16 @@
-﻿from pathlib import Path
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from auth import get_current_user
 from database import get_db
-from models import Question, Subject, User
+from models import Chapter, Question, Subject, User
 from routers.subjects import get_or_create_default_subject
 from utils.answer_normalizer import normalize_question_type, normalize_standard_answer
 from utils.ai_access import get_user_deepseek_api_key
@@ -34,6 +35,9 @@ class ParsedQuestion(BaseModel):
     options: Dict[str, Any] = Field(default_factory=dict)
     answer: str
     explanation: Optional[str] = ""
+    # 章节：chapter_id 优先；chapter_name 非空时按名匹配，不存在则自动建章
+    chapter_id: Optional[int] = None
+    chapter_name: Optional[str] = ""
 
 
 class ImportRequest(BaseModel):
@@ -112,6 +116,8 @@ class QuestionCreateRequest(BaseModel):
     options: Dict[str, Any]
     answer: str
     explanation: Optional[str] = ""
+    chapter_id: Optional[int] = None
+    chapter_name: Optional[str] = ""
 
 
 class QuestionCreateResponse(BaseModel):
@@ -151,6 +157,54 @@ def resolve_subject_id(subject_id: Optional[int], db: Session, current_user: Use
     return subject.id
 
 
+def resolve_chapter_id(
+    db: Session,
+    current_user: User,
+    subject_id: int,
+    chapter_id: Optional[int],
+    chapter_name: Optional[str],
+) -> Optional[int]:
+    """章节归属解析：chapter_id 优先校验；chapter_name 非空时按名匹配，不存在则自动建章。"""
+    if chapter_id:
+        chapter = db.query(Chapter).filter(
+            Chapter.id == chapter_id,
+            Chapter.user_id == current_user.id,
+        ).first()
+        if not chapter or chapter.subject_id != subject_id:
+            raise HTTPException(status_code=400, detail="章节不存在或不属于该科目")
+        return chapter.id
+
+    name = " ".join((chapter_name or "").strip().split())
+    if not name:
+        return None
+
+    existing = (
+        db.query(Chapter)
+        .filter(
+            Chapter.subject_id == subject_id,
+            Chapter.user_id == current_user.id,
+            func.lower(Chapter.name) == name.lower(),
+        )
+        .first()
+    )
+    if existing:
+        return existing.id
+
+    max_order = db.query(func.max(Chapter.sort_order)).filter(
+        Chapter.subject_id == subject_id,
+        Chapter.user_id == current_user.id,
+    ).scalar() or 0
+    chapter = Chapter(
+        user_id=current_user.id,
+        subject_id=subject_id,
+        name=name,
+        sort_order=(max_order or 0) + 1,
+    )
+    db.add(chapter)
+    db.flush()
+    return chapter.id
+
+
 def resolve_user_upload_file(saved_name: str, current_user: User) -> Path:
     safe_saved_name = Path(saved_name).name
     base_dir = get_user_upload_dir(current_user.id).resolve()
@@ -183,9 +237,12 @@ def create_question(
         if normalize_content(question.content) == normalized_content:
             raise HTTPException(status_code=400, detail="Question already exists")
 
+    chapter_id = resolve_chapter_id(db, current_user, subject_id, request.chapter_id, request.chapter_name)
+
     new_question = Question(
         user_id=current_user.id,
         subject_id=subject_id,
+        chapter_id=chapter_id,
         type=normalize_question_type(request.type),
         content=request.content,
         options=request.options,
@@ -483,10 +540,18 @@ def import_questions(
         normalized_content = normalize_content(question["content"])
         if normalized_content in known_contents:
             continue
+        chapter_id = resolve_chapter_id(
+            db,
+            current_user,
+            subject_id,
+            question.get("chapter_id"),
+            question.get("chapter_name", ""),
+        )
         db.add(
             Question(
                 user_id=current_user.id,
                 subject_id=subject_id,
+                chapter_id=chapter_id,
                 type=normalized_type,
                 content=question["content"],
                 options=question["options"],
@@ -499,3 +564,59 @@ def import_questions(
 
     db.commit()
     return {"parsed_count": parsed_count, "inserted_count": inserted_count}
+
+
+class AiAssignChaptersRequest(BaseModel):
+    subject_id: int
+    questions: List[dict]
+
+
+@router.post("/import/ai-assign-chapters")
+async def ai_assign_chapters(
+    request: AiAssignChaptersRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    调用 DeepSeek 为预览中的一批题目自动划分章节。
+    返回 assignments: [{"index": 0, "chapter": "第1章 绪论"}, ...]
+    """
+    from utils.ai_access import get_user_deepseek_api_key
+    from utils.ai_chapter_assign import assign_chapters_with_ai
+
+    api_key = get_user_deepseek_api_key(current_user)
+    if not api_key:
+        raise HTTPException(status_code=400, detail="请先配置个人 DeepSeek API Key")
+
+    if not request.questions:
+        raise HTTPException(status_code=400, detail="没有可供划分章节的题目")
+
+    # 校验科目归属
+    subject = db.query(Subject).filter(
+        Subject.id == request.subject_id,
+        Subject.user_id == current_user.id,
+    ).first()
+    if not subject:
+        raise HTTPException(status_code=404, detail="科目不存在")
+
+    # 获取已有章节名列表
+    existing_chapters = (
+        db.query(Chapter)
+        .filter(
+            Chapter.subject_id == request.subject_id,
+            Chapter.user_id == current_user.id,
+        )
+        .all()
+    )
+    existing_names = [ch.name for ch in existing_chapters]
+
+    assignments, errors = await assign_chapters_with_ai(
+        questions=request.questions,
+        existing_chapter_names=existing_names,
+        api_key=api_key,
+    )
+
+    return {
+        "assignments": assignments,
+        "errors": errors,
+    }

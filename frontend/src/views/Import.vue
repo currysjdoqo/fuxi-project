@@ -11,7 +11,7 @@
 
         <section class="import-panel">
           <div class="subject-row">
-            <el-select v-model="subjectId" placeholder="选择科目" filterable>
+            <el-select v-model="subjectId" placeholder="选择科目" filterable @change="handleSubjectChange">
               <el-option
                 v-for="subject in subjects"
                 :key="subject.id"
@@ -21,6 +21,25 @@
             </el-select>
             <el-input v-model="newSubjectName" placeholder="新科目，例如：机器学习" @keyup.enter="handleCreateSubject" />
             <el-button :icon="Plus" :loading="subjectCreating" @click="handleCreateSubject">创建</el-button>
+          </div>
+
+          <div class="subject-row chapter-row">
+            <el-select
+              v-model="defaultChapterName"
+              placeholder="本批题目归入章节（选填，可分章节导入）"
+              clearable
+              filterable
+              @change="handleDefaultChapterChange"
+            >
+              <el-option
+                v-for="chapter in chapters"
+                :key="chapter.id"
+                :label="chapter.name"
+                :value="chapter.name"
+              />
+            </el-select>
+            <el-input v-model="newChapterName" placeholder="新章节，例如：第1章 绪论" @keyup.enter="handleCreateChapter" />
+            <el-button :icon="Plus" :loading="chapterCreating" @click="handleCreateChapter">创建章节</el-button>
           </div>
 
           <div class="format-info">
@@ -96,6 +115,13 @@
             </el-upload>
             <el-button type="primary" :icon="Upload" :loading="loading" @click="handleParse">解析预览</el-button>
             <el-button :loading="aiParsing" @click="handleAiParse">AI 兜底解析</el-button>
+            <el-button
+              type="warning"
+              plain
+              :disabled="!parsedQuestions.length"
+              :loading="chapterAssigning"
+              @click="handleAiAssignChapters"
+            >AI 划分章节</el-button>
             <el-button type="success" :disabled="!parsedQuestions.length" :loading="saving" @click="saveParsedQuestions">保存预览题目</el-button>
             <el-button :icon="Delete" @click="clearText">清空</el-button>
           </div>
@@ -123,14 +149,33 @@
             <div v-for="(question, index) in parsedQuestions" :key="index" class="preview-item">
               <div class="preview-head">
                 <strong>第 {{ index + 1 }} 题</strong>
-                <el-select v-model="question.type" class="type-select">
-                  <el-option label="单选题" value="single" />
-                  <el-option label="多选题" value="multi" />
-                  <el-option label="判断题" value="judge" />
-                  <el-option label="填空题" value="fill" />
-                  <el-option label="简答题" value="short" />
-                  <el-option label="编程题" value="code" />
-                </el-select>
+                <div class="preview-head-controls">
+                  <el-select
+                    v-model="question.chapter_name"
+                    class="chapter-select"
+                    filterable
+                    allow-create
+                    default-first-option
+                    clearable
+                    placeholder="未分章（可选择或输入章节）"
+                  >
+                    <el-option label="未分章" value="" />
+                    <el-option
+                      v-for="name in chapterNameOptions"
+                      :key="name"
+                      :label="name"
+                      :value="name"
+                    />
+                  </el-select>
+                  <el-select v-model="question.type" class="type-select">
+                    <el-option label="单选题" value="single" />
+                    <el-option label="多选题" value="multi" />
+                    <el-option label="判断题" value="judge" />
+                    <el-option label="填空题" value="fill" />
+                    <el-option label="简答题" value="short" />
+                    <el-option label="编程题" value="code" />
+                  </el-select>
+                </div>
               </div>
 
               <el-input v-model="question.content" type="textarea" :rows="2" placeholder="题干" />
@@ -190,13 +235,13 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Back, Delete, Document, Plus, Refresh, Setting, Star, Upload, UploadFilled, CircleClose, Menu, Download, List, Folder, Warning } from '@element-plus/icons-vue'
 import { useUser } from '../composables/useUser'
 import { clearAuthSession } from '../utils/authStorage'
-import { createSubject, downloadImportTemplate, getSubjects, importParsedQuestions, parseQuestions, parseQuestionsWithAi, parseUploadedFile, parseUploadedFileWithAi } from '../api'
+import { aiAssignChapters, createChapter, createSubject, downloadImportTemplate, getChapters, getSubjects, importParsedQuestions, parseQuestions, parseQuestionsWithAi, parseUploadedFile, parseUploadedFileWithAi } from '../api'
 import ProfileModal from '../components/ProfileModal.vue'
 import Layout from '../components/Layout/Layout.vue'
 
@@ -206,6 +251,11 @@ const showProfileModal = ref(false)
 const subjects = ref([])
 const subjectId = ref(null)
 const newSubjectName = ref('')
+const chapters = ref([])
+const defaultChapterName = ref('')
+const newChapterName = ref('')
+const chapterCreating = ref(false)
+const chapterAssigning = ref(false)
 const exerciseText = ref('')
 const loading = ref(false)
 const saving = ref(false)
@@ -221,10 +271,25 @@ const imageExts = new Set(['.png', '.jpg', '.jpeg', '.bmp', '.webp', '.gif', '.t
 const previewableAssetExts = new Set(['.pdf', ...imageExts])
 const lastUploadedFile = ref(null)
 
+const chapterNameOptions = computed(() => {
+  const names = chapters.value.map(chapter => chapter.name)
+  parsedQuestions.value.forEach((question) => {
+    const name = (question.chapter_name || '').trim()
+    if (name && !names.includes(name)) {
+      names.push(name)
+    }
+  })
+  if (defaultChapterName.value && !names.includes(defaultChapterName.value)) {
+    names.push(defaultChapterName.value)
+  }
+  return names
+})
+
 const applyParsedQuestions = (questions = []) => {
   parsedQuestions.value = questions.map(question => ensureMultiChoiceOptions({
     ...question,
-    options: { ...(question.options || {}) }
+    options: { ...(question.options || {}) },
+    chapter_name: question.chapter_name || defaultChapterName.value || ''
   }))
 }
 
@@ -282,8 +347,62 @@ const loadSubjects = async () => {
     if (!subjectId.value && subjects.value.length) {
       subjectId.value = subjects.value[0].id
     }
+    await loadChapters()
   } catch (error) {
     ElMessage.error(`加载科目失败：${error.response?.data?.detail || error.message}`)
+  }
+}
+
+const loadChapters = async () => {
+  if (!subjectId.value) {
+    chapters.value = []
+    return
+  }
+  try {
+    chapters.value = await getChapters(subjectId.value)
+  } catch (error) {
+    chapters.value = []
+  }
+}
+
+const handleSubjectChange = async () => {
+  defaultChapterName.value = ''
+  newChapterName.value = ''
+  await loadChapters()
+}
+
+const handleDefaultChapterChange = () => {
+  // 默认章节只填充到还未分章的题目，已设置章节（含文档识别出的）不覆盖
+  if (!defaultChapterName.value) return
+  parsedQuestions.value.forEach((question) => {
+    if (!question.chapter_name) {
+      question.chapter_name = defaultChapterName.value
+    }
+  })
+}
+
+const handleCreateChapter = async () => {
+  if (!subjectId.value) {
+    ElMessage.warning('请先选择科目')
+    return
+  }
+  const name = newChapterName.value.trim()
+  if (!name) {
+    ElMessage.warning('请输入章节名称')
+    return
+  }
+  chapterCreating.value = true
+  try {
+    const chapter = await createChapter(subjectId.value, name)
+    newChapterName.value = ''
+    await loadChapters()
+    defaultChapterName.value = chapter.name
+    handleDefaultChapterChange()
+    ElMessage.success(`章节「${name}」已创建，已应用到未分章的题目`)
+  } catch (error) {
+    ElMessage.error(`创建章节失败：${error.response?.data?.detail || error.message}`)
+  } finally {
+    chapterCreating.value = false
   }
 }
 
@@ -298,6 +417,7 @@ const handleCreateSubject = async () => {
     newSubjectName.value = ''
     await loadSubjects()
     subjectId.value = subject.id
+    await handleSubjectChange()
     ElMessage.success('科目已创建')
   } catch (error) {
     ElMessage.error(`创建科目失败：${error.response?.data?.detail || error.message}`)
@@ -419,6 +539,54 @@ const handleAiParse = async () => {
   }
 }
 
+const handleAiAssignChapters = async () => {
+  if (!subjectId.value) {
+    ElMessage.warning('请选择科目')
+    return
+  }
+  if (!parsedQuestions.value.length) {
+    ElMessage.warning('请先解析题目')
+    return
+  }
+
+  chapterAssigning.value = true
+  parseErrors.value = []
+  try {
+    const result = await aiAssignChapters(subjectId.value, parsedQuestions.value)
+    if (result.errors?.length) {
+      parseErrors.value = result.errors
+    }
+    if (result.assignments?.length) {
+      const assignmentMap = {}
+      result.assignments.forEach((item) => {
+        assignmentMap[item.index] = item.chapter
+      })
+      let applied = 0
+      parsedQuestions.value.forEach((question, index) => {
+        if (assignmentMap[index]) {
+          question.chapter_name = assignmentMap[index]
+          applied++
+        }
+      })
+      // 收集 AI 生成的新章节名，刷新下拉
+      const aiChapters = [...new Set(result.assignments.map((a) => a.chapter))]
+      const existing = new Set(chapters.value.map((c) => c.name))
+      aiChapters.forEach((name) => {
+        if (!existing.has(name)) {
+          chapters.value.push({ id: 0, name, question_count: 0 })
+        }
+      })
+      ElMessage.success(`AI 已为 ${applied} 道题目划分章节，可在预览中逐题调整`)
+    } else {
+      ElMessage.warning('AI 未能划分章节，请检查 API Key 配置后重试')
+    }
+  } catch (error) {
+    ElMessage.error(`AI 划分章节失败：${error.response?.data?.detail || error.message}`)
+  } finally {
+    chapterAssigning.value = false
+  }
+}
+
 const isAttachmentCodeQuestion = (question) => {
   return question.type === 'code' && (question.options._asset_url || Object.keys(question.options).some(k => k.startsWith('_')))
 }
@@ -454,6 +622,7 @@ const saveParsedQuestions = async () => {
     parsedQuestions.value = []
     parseErrors.value = []
     await loadSubjects()
+    await loadChapters()
   } catch (error) {
     ElMessage.error(`保存失败：${error.response?.data?.detail || error.message}`)
   } finally {
@@ -635,6 +804,20 @@ onMounted(async () => {
   grid-template-columns: 260px 1fr auto;
   gap: 10px;
   margin-bottom: 16px;
+}
+
+.chapter-row {
+  margin-bottom: 20px;
+}
+
+.preview-head-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.chapter-select {
+  width: 220px;
 }
 
 .format-info {

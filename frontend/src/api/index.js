@@ -80,6 +80,68 @@ export const deleteSubject = async (subjectId) => {
   return response.data
 }
 
+export const getChapters = async (subjectId) => {
+  const response = await api.get(`/subjects/${subjectId}/chapters`)
+  return response.data
+}
+
+export const createChapter = async (subjectId, name) => {
+  const response = await api.post('/chapters', { subject_id: subjectId, name })
+  return response.data
+}
+
+export const updateChapter = async (chapterId, data) => {
+  const response = await api.patch(`/chapters/${chapterId}`, data)
+  return response.data
+}
+
+export const deleteChapter = async (chapterId) => {
+  const response = await api.delete(`/chapters/${chapterId}`)
+  return response.data
+}
+
+export const moveQuestionsToChapter = async (chapterId, questionIds) => {
+  const response = await api.post('/chapters/batch-move', {
+    chapter_id: chapterId,
+    question_ids: questionIds
+  })
+  return response.data
+}
+
+export const aiAssignChapters = async (subjectId, questions) => {
+  const response = await api.post('/import/ai-assign-chapters', {
+    subject_id: subjectId,
+    questions
+  })
+  return response.data
+}
+
+// AI 知识点提炼
+export const tagChapterQuestions = async (chapterId) => {
+  const response = await api.post(`/chapters/${chapterId}/tag-questions`)
+  return response.data
+}
+
+export const generateChapterSummary = async (chapterId) => {
+  const response = await api.post(`/chapters/${chapterId}/generate-summary`)
+  return response.data
+}
+
+export const generateChapterOutline = async (chapterId) => {
+  const response = await api.post(`/chapters/${chapterId}/generate-outline`)
+  return response.data
+}
+
+export const getChapterKnowledge = async (chapterId) => {
+  const response = await api.get(`/chapters/${chapterId}/knowledge`)
+  return response.data
+}
+
+export const extractAllKnowledge = async (chapterId) => {
+  const response = await api.post(`/chapters/${chapterId}/extract-all`)
+  return response.data
+}
+
 export const importQuestions = async (text, subjectId) => {
   const response = await api.post('/import', {
     text,
@@ -170,16 +232,16 @@ export const addQuestion = async (questionData) => {
   return response.data
 }
 
-export const getQuestions = async (skip = 0, limit = 100, subjectId = null, questionType = 'all', importantOnly = false) => {
+export const getQuestions = async (skip = 0, limit = 100, subjectId = null, questionType = 'all', importantOnly = false, chapterId = null) => {
   const response = await api.get('/questions', {
-    params: { skip, limit, subject_id: subjectId, question_type: questionType, important_only: importantOnly }
+    params: { skip, limit, subject_id: subjectId, question_type: questionType, important_only: importantOnly, chapter_id: chapterId }
   })
   return response.data
 }
 
-export const getQuestionsSummary = async (subjectId = null, questionType = 'all', importantOnly = false) => {
+export const getQuestionsSummary = async (subjectId = null, questionType = 'all', importantOnly = false, chapterId = null) => {
   const response = await api.get('/questions/summary', {
-    params: { subject_id: subjectId, question_type: questionType, important_only: importantOnly }
+    params: { subject_id: subjectId, question_type: questionType, important_only: importantOnly, chapter_id: chapterId }
   })
   return response.data
 }

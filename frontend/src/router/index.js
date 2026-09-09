@@ -8,6 +8,7 @@ import Plan from '../views/Plan.vue'
 import Register from '../views/Register.vue'
 import Login from '../views/Login.vue'
 import Friends from '../views/Friends.vue'
+import Chapters from '../views/Chapters.vue'
 import { getCurrentUser } from '../api'
 import { bootstrapLegacyAuth, clearAuthSession, getAuthToken, isAuthSessionReady } from '../utils/authStorage'
 
@@ -60,6 +61,11 @@ const routes = [
     path: '/friends',
     name: 'Friends',
     component: Friends
+  },
+  {
+    path: '/chapters',
+    name: 'Chapters',
+    component: Chapters
   }
 ]
 
