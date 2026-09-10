@@ -513,3 +513,166 @@ async def extract_all_knowledge(
         "has_outline": bool(outline),
         "errors": all_errors,
     }
+
+
+# ---------- 存量未分章题目 AI 划分 ----------
+
+class AssignUnassignedRequest(BaseModel):
+    subject_id: int
+
+
+@router.get("/subjects/{subject_id}/unassigned-questions")
+def get_unassigned_questions(
+    subject_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """获取某科目下未分章的题目列表。"""
+    subject = db.query(Subject).filter(
+        Subject.id == subject_id,
+        Subject.user_id == current_user.id,
+    ).first()
+    if not subject:
+        raise HTTPException(status_code=404, detail="科目不存在")
+
+    questions = (
+        db.query(Question)
+        .filter(
+            Question.subject_id == subject_id,
+            Question.user_id == current_user.id,
+            Question.chapter_id.is_(None),
+            Question.deleted_at.is_(None),
+        )
+        .order_by(Question.id.asc())
+        .all()
+    )
+
+    return {
+        "count": len(questions),
+        "questions": [
+            {
+                "id": q.id,
+                "type": q.type,
+                "content": q.content,
+                "answer": q.answer or "",
+            }
+            for q in questions
+        ],
+    }
+
+
+@router.post("/subjects/{subject_id}/ai-assign-unassigned")
+async def ai_assign_unassigned_questions(
+    subject_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    对某科目下所有未分章的存量题目，调用 AI 划分章节并落库。
+    AI 返回章节名后：已有同名章节则匹配，不存在则自动新建。
+    """
+    from utils.ai_access import get_user_deepseek_api_key
+    from utils.ai_chapter_assign import assign_chapters_with_ai
+
+    api_key = get_user_deepseek_api_key(current_user)
+    if not api_key:
+        raise HTTPException(status_code=400, detail="请先配置个人 DeepSeek API Key")
+
+    subject = db.query(Subject).filter(
+        Subject.id == subject_id,
+        Subject.user_id == current_user.id,
+    ).first()
+    if not subject:
+        raise HTTPException(status_code=404, detail="科目不存在")
+
+    questions = (
+        db.query(Question)
+        .filter(
+            Question.subject_id == subject_id,
+            Question.user_id == current_user.id,
+            Question.chapter_id.is_(None),
+            Question.deleted_at.is_(None),
+        )
+        .order_by(Question.id.asc())
+        .all()
+    )
+    if not questions:
+        raise HTTPException(status_code=400, detail="该科目没有未分章的题目")
+
+    # 获取已有章节名列表
+    existing_chapters = (
+        db.query(Chapter)
+        .filter(
+            Chapter.subject_id == subject_id,
+            Chapter.user_id == current_user.id,
+        )
+        .all()
+    )
+    existing_names = [ch.name for ch in existing_chapters]
+
+    # 构造 AI 输入（每题只传 content 和 type）
+    question_dicts = [
+        {"content": q.content, "type": q.type}
+        for q in questions
+    ]
+
+    assignments, errors = await assign_chapters_with_ai(
+        questions=question_dicts,
+        existing_chapter_names=existing_names,
+        api_key=api_key,
+    )
+
+    # 建立 chapter_name → Chapter 的映射（含自动建章）
+    chapter_map: dict[str, Chapter] = {}
+    for ch in existing_chapters:
+        chapter_map[normalize_chapter_name(ch.name)] = ch
+
+    max_order = db.query(func.max(Chapter.sort_order)).filter(
+        Chapter.subject_id == subject_id,
+        Chapter.user_id == current_user.id,
+    ).scalar() or 0
+
+    assigned_count = 0
+    for item in assignments:
+        idx = item["index"]
+        chapter_name = normalize_chapter_name(item["chapter"])
+        if not chapter_name or idx >= len(questions):
+            continue
+
+        if chapter_name not in chapter_map:
+            # 自动建章
+            max_order += 1
+            new_chapter = Chapter(
+                user_id=current_user.id,
+                subject_id=subject_id,
+                name=chapter_name,
+                sort_order=max_order,
+            )
+            db.add(new_chapter)
+            db.flush()
+            chapter_map[chapter_name] = new_chapter
+
+        questions[idx].chapter_id = chapter_map[chapter_name].id
+        assigned_count += 1
+
+    db.commit()
+
+    # 统计 AI 划分出的章节名
+    ai_chapter_names = list(set(
+        normalize_chapter_name(item["chapter"])
+        for item in assignments
+        if normalize_chapter_name(item["chapter"])
+    ))
+    new_chapter_names = [
+        name for name in ai_chapter_names
+        if name not in [normalize_chapter_name(ch.name) for ch in existing_chapters]
+    ]
+
+    return {
+        "message": f"AI 已为 {assigned_count} 道未分章题目划分章节"
+                   + (f"，新建章节 {len(new_chapter_names)} 个" if new_chapter_names else ""),
+        "assigned_count": assigned_count,
+        "total_unassigned": len(questions),
+        "new_chapter_names": new_chapter_names,
+        "errors": errors,
+    }

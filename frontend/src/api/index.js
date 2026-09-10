@@ -142,6 +142,16 @@ export const extractAllKnowledge = async (chapterId) => {
   return response.data
 }
 
+export const getUnassignedQuestions = async (subjectId) => {
+  const response = await api.get(`/subjects/${subjectId}/unassigned-questions`)
+  return response.data
+}
+
+export const aiAssignUnassigned = async (subjectId) => {
+  const response = await api.post(`/subjects/${subjectId}/ai-assign-unassigned`)
+  return response.data
+}
+
 export const importQuestions = async (text, subjectId) => {
   const response = await api.post('/import', {
     text,
