@@ -12,6 +12,14 @@ services:
       - ALLOWED_ORIGINS=http://localhost:80,http://localhost,http://127.0.0.1,http://43.108.18.169,http://43.108.18.169:80,http://43.108.18.169:8000,https://43.108.18.169
       - WRONG_QUESTION_REMOVE_THRESHOLD=${WRONG_QUESTION_REMOVE_THRESHOLD:-5}
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+      - APP_BASE_URL=${APP_BASE_URL:-}
+      - FRONTEND_BASE_URL=${FRONTEND_BASE_URL:-}
+      - ALIPAY_APP_ID=${ALIPAY_APP_ID:-}
+      - ALIPAY_PRIVATE_KEY=${ALIPAY_PRIVATE_KEY:-}
+      - ALIPAY_PUBLIC_KEY=${ALIPAY_PUBLIC_KEY:-}
+      - ALIPAY_GATEWAY=${ALIPAY_GATEWAY:-}
+      - ALIPAY_NOTIFY_URL=${ALIPAY_NOTIFY_URL:-}
+      - ALIPAY_RETURN_URL=${ALIPAY_RETURN_URL:-}
     volumes:
       - ./data:/app/data
       - ./uploads:/app/uploads

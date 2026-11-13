@@ -12,14 +12,28 @@
         <section class="import-panel">
           <div class="subject-row">
             <el-select v-model="subjectId" placeholder="选择科目" filterable @change="handleSubjectChange">
+              <el-option-group
+                v-for="group in folderGroups"
+                :key="group.id"
+                :label="group.name + `（${group.subject_count}个）`"
+              >
+                <el-option
+                  v-for="subject in group.subjects"
+                  :key="subject.id"
+                  :label="`${subject.name}（${subject.question_count}题）`"
+                  :value="subject.id"
+                />
+              </el-option-group>
+            </el-select>
+            <el-input v-model="newSubjectName" placeholder="新科目，例如：机器学习" style="width: 160px" @keyup.enter="handleCreateSubject" />
+            <el-select v-model="newSubjectFolderId" placeholder="归入文件夹" clearable style="width: 140px">
               <el-option
-                v-for="subject in subjects"
-                :key="subject.id"
-                :label="`${subject.name}（${subject.question_count}题）`"
-                :value="subject.id"
+                v-for="group in folderGroups.filter(f => f.id !== -1)"
+                :key="group.id"
+                :label="group.name"
+                :value="group.id"
               />
             </el-select>
-            <el-input v-model="newSubjectName" placeholder="新科目，例如：机器学习" @keyup.enter="handleCreateSubject" />
             <el-button :icon="Plus" :loading="subjectCreating" @click="handleCreateSubject">创建</el-button>
           </div>
 
@@ -114,6 +128,13 @@
               <el-button :icon="UploadFilled" :loading="extracting">上传文件</el-button>
             </el-upload>
             <el-button type="primary" :icon="Upload" :loading="loading" @click="handleParse">解析预览</el-button>
+            <el-button
+              v-if="smartStats && smartStats.remaining_residual_count"
+              type="warning"
+              plain
+              :loading="completingResiduals"
+              @click="handleCompleteResiduals"
+            >AI 补全残块</el-button>
             <el-button :loading="aiParsing" @click="handleAiParse">AI 兜底解析</el-button>
             <el-button
               type="warning"
@@ -124,6 +145,15 @@
             >AI 划分章节</el-button>
             <el-button type="success" :disabled="!parsedQuestions.length" :loading="saving" @click="saveParsedQuestions">保存预览题目</el-button>
             <el-button :icon="Delete" @click="clearText">清空</el-button>
+          </div>
+
+          <div v-if="smartStats" class="smart-stats">
+            <el-tag size="small" type="info">规则识别 {{ smartStats.rule_count ?? 0 }} 题</el-tag>
+            <el-tag v-if="smartStats.ai_added_questions ?? smartStats.ai_added" size="small" type="warning">AI 补全 {{ smartStats.ai_added_questions ?? smartStats.ai_added }} 题</el-tag>
+            <el-tag v-if="smartStats.cache_hit" size="small" type="success">命中缓存</el-tag>
+            <el-tag v-if="smartStats.remaining_residual_count" size="small" type="danger">
+              剩余 {{ smartStats.remaining_residual_count }} 段未识别
+            </el-tag>
           </div>
 
           <div v-if="parseErrors.length > 0" class="error-list">
@@ -237,11 +267,11 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
 import { Back, Delete, Document, Plus, Refresh, Setting, Star, Upload, UploadFilled, CircleClose, Menu, Download, List, Folder, Warning } from '@element-plus/icons-vue'
 import { useUser } from '../composables/useUser'
 import { clearAuthSession } from '../utils/authStorage'
-import { aiAssignChapters, createChapter, createSubject, downloadImportTemplate, getChapters, getSubjects, importParsedQuestions, parseQuestions, parseQuestionsWithAi, parseUploadedFile, parseUploadedFileWithAi } from '../api'
+import { ElMessageBox } from 'element-plus'
+import { aiAssignChapters, createChapter, createSubject, downloadImportTemplate, getChapters, getSubjects, importParsedQuestions, smartParseFile, smartParseText } from '../api'
 import ProfileModal from '../components/ProfileModal.vue'
 import Layout from '../components/Layout/Layout.vue'
 
@@ -249,8 +279,10 @@ const router = useRouter()
 const { username, avatar, loadUserInfo } = useUser()
 const showProfileModal = ref(false)
 const subjects = ref([])
+const folderGroups = ref([])
 const subjectId = ref(null)
 const newSubjectName = ref('')
+const newSubjectFolderId = ref(null)
 const chapters = ref([])
 const defaultChapterName = ref('')
 const newChapterName = ref('')
@@ -263,6 +295,9 @@ const downloading = ref(false)
 const subjectCreating = ref(false)
 const extracting = ref(false)
 const aiParsing = ref(false)
+const completingResiduals = ref(false)
+const smartStats = ref(null)
+const lastSource = ref({ kind: 'text' })
 const result = ref(null)
 const parsedQuestions = ref([])
 const parseErrors = ref([])
@@ -293,17 +328,41 @@ const applyParsedQuestions = (questions = []) => {
   }))
 }
 
-const tryAiFallback = async (text, sourceName = '文本导入') => {
-  const aiResult = await parseQuestionsWithAi(text, sourceName)
-  if (aiResult.errors?.length) {
-    parseErrors.value = [...parseErrors.value, ...aiResult.errors]
+const describeSmartStats = (stats = {}) => {
+  const parts = [`规则识别 ${(stats.rule_count ?? 0)} 题`]
+  if (stats.ai_added_questions ?? stats.ai_added) {
+    parts.push(`AI 补全 ${stats.ai_added_questions ?? stats.ai_added} 题`)
   }
-  if (aiResult.parsed_questions?.length) {
-    applyParsedQuestions(aiResult.parsed_questions)
-    ElMessage.success(`规则解析失败，已通过 AI 兜底解析 ${aiResult.parsed_questions.length} 道题目`)
+  if (stats.cache_hit) {
+    parts.push('命中缓存')
+  }
+  if (stats.remaining_residual_count) {
+    parts.push(`仍剩 ${stats.remaining_residual_count} 段未识别`)
+  }
+  return parts.join(' · ')
+}
+
+const applySmartResult = (parsed, { successText = '' } = {}) => {
+  const stats = parsed.stats || {}
+  smartStats.value = stats
+  if (parsed.errors?.length) {
+    parseErrors.value = [...parseErrors.value, ...parsed.errors]
+  }
+  if (parsed.questions?.length) {
+    applyParsedQuestions(parsed.questions)
+    const message = successText || `已识别 ${parsed.questions.length} 道题目（${describeSmartStats(stats)}）`
+    ElMessage.success(message)
     return true
   }
+  parsedQuestions.value = []
   return false
+}
+
+const tryAiFallback = async (text, sourceName = '文本导入') => {
+  const parsed = await smartParseText(text, { sourceName, aiFallback: true, forceResiduals: true })
+  return applySmartResult(parsed, {
+    successText: `AI 兜底解析完成，共 ${parsed.questions?.length || 0} 道题目`
+  })
 }
 
 const handleLogout = () => {
@@ -343,7 +402,8 @@ const ensureMultiChoiceOptions = (question) => {
 
 const loadSubjects = async () => {
   try {
-    subjects.value = await getSubjects()
+    folderGroups.value = await getFoldersWithSubjects()
+    subjects.value = folderGroups.value.flatMap(g => g.subjects || [])
     if (!subjectId.value && subjects.value.length) {
       subjectId.value = subjects.value[0].id
     }
@@ -372,7 +432,6 @@ const handleSubjectChange = async () => {
 }
 
 const handleDefaultChapterChange = () => {
-  // 默认章节只填充到还未分章的题目，已设置章节（含文档识别出的）不覆盖
   if (!defaultChapterName.value) return
   parsedQuestions.value.forEach((question) => {
     if (!question.chapter_name) {
@@ -413,8 +472,9 @@ const handleCreateSubject = async () => {
   }
   subjectCreating.value = true
   try {
-    const subject = await createSubject(newSubjectName.value.trim())
+    const subject = await createSubject(newSubjectName.value.trim(), newSubjectFolderId.value)
     newSubjectName.value = ''
+    newSubjectFolderId.value = null
     await loadSubjects()
     subjectId.value = subject.id
     await handleSubjectChange()
@@ -454,13 +514,15 @@ const handleParse = async () => {
   loading.value = true
   parseErrors.value = []
   try {
-    const questions = await parseQuestions(exerciseText.value)
-    if (questions.length) {
-      applyParsedQuestions(questions)
+    lastSource.value = { kind: 'text' }
+    const parsed = await smartParseText(exerciseText.value, { sourceName: '题目粘贴导入', aiFallback: false })
+    if (!applySmartResult(parsed)) {
+      ElMessage.warning('未能解析出题目，可点击“AI 兜底解析”继续尝试')
       return
     }
-    parsedQuestions.value = []
-    ElMessage.warning('未能解析出题目，可点击“AI 兜底解析”继续尝试')
+    if (parsed.stats?.remaining_residual_count) {
+      ElMessage.warning(`还有 ${parsed.stats.remaining_residual_count} 段内容未能识别，可点击“AI 补全残块”`)
+    }
   } catch (error) {
     ElMessage.error(`解析失败：${error.response?.data?.detail || error.message}`)
   } finally {
@@ -476,24 +538,59 @@ const handleMultiFileUpload = async (file) => {
   extracting.value = true
   parseErrors.value = []
   lastUploadedFile.value = file.raw
+  lastSource.value = { kind: 'file', file: file.raw }
   try {
-    const result = await parseUploadedFile(file.raw)
-    
-    if (result.errors && result.errors.length > 0) {
-      parseErrors.value = result.errors
-    }
-    
-    if (result.parsed_questions && result.parsed_questions.length > 0) {
-      applyParsedQuestions(result.parsed_questions)
-      ElMessage.success(`成功解析 ${result.parsed_questions.length} 道题目`)
-    } else {
+    const parsed = await smartParseFile(file.raw, { aiFallback: false })
+
+    if (!applySmartResult(parsed)) {
       ElMessage.warning('未能从文件中解析出题目，可点击“AI 兜底解析”继续尝试')
+      return
+    }
+    if (parsed.stats?.remaining_residual_count) {
+      ElMessage.warning(`还有 ${parsed.stats.remaining_residual_count} 段内容未能识别，可点击“AI 补全残块”`)
     }
   } catch (error) {
     const detail = error.response?.data?.detail || error.message
     ElMessage.error(buildUploadFailureMessage(file.raw?.name || file.name, detail))
   } finally {
     extracting.value = false
+  }
+}
+
+const handleCompleteResiduals = async () => {
+  if (!subjectId.value) {
+    ElMessage.warning('请选择科目')
+    return
+  }
+  const residualCount = smartStats.value?.remaining_residual_count || 0
+  if (residualCount > 20) {
+    const estimated = smartStats.value?.estimated_ai_questions || residualCount
+    try {
+      await ElMessageBox.confirm(
+        `还有 ${residualCount} 段残块，预计需要 AI 补全 ${estimated} 题，可能产生 API 费用。是否继续？`,
+        '确认 AI 补全',
+        { type: 'warning', confirmButtonText: '继续补全', cancelButtonText: '取消' }
+      )
+    } catch {
+      return
+    }
+  }
+  completingResiduals.value = true
+  parseErrors.value = []
+  try {
+    const source = lastSource.value || { kind: 'text' }
+    const parsed = source.kind === 'file' && source.file
+      ? await smartParseFile(source.file, { aiFallback: true, forceResiduals: true })
+      : await smartParseText(exerciseText.value, { sourceName: '题目粘贴导入', aiFallback: true, forceResiduals: true })
+
+    if (applySmartResult(parsed, { successText: `AI 补全完成，共 ${parsed.questions?.length || 0} 道题目（${describeSmartStats(parsed.stats || {})}）` })) {
+      return
+    }
+    ElMessage.warning('AI 未能补全剩余内容')
+  } catch (error) {
+    ElMessage.error(`AI 补全失败：${error.response?.data?.detail || error.message}`)
+  } finally {
+    completingResiduals.value = false
   }
 }
 
@@ -513,6 +610,12 @@ const handleAiParse = async () => {
   parseErrors.value = []
   try {
     if (text) {
+      lastSource.value = { kind: 'text' }
+      const parsed = await smartParseText(text, { sourceName: '文本粘贴导入', aiFallback: true })
+      if (applySmartResult(parsed, { successText: `AI 解析成功，共 ${parsed.questions?.length || 0} 道题目（${describeSmartStats(parsed.stats || {})}）` })) {
+        return
+      }
+      // 规则完全没定位到题目时，退化为整段送 AI（可能产生费用，由用户主动点击触发）
       const aiSucceeded = await tryAiFallback(text, '文本粘贴导入')
       if (!aiSucceeded) {
         parsedQuestions.value = []
@@ -521,14 +624,14 @@ const handleAiParse = async () => {
       return
     }
 
-    const result = await parseUploadedFileWithAi(lastUploadedFile.value)
-    if (result.errors?.length) {
-      parseErrors.value = result.errors
+    lastSource.value = { kind: 'file', file: lastUploadedFile.value }
+    const parsedFile = await smartParseFile(lastUploadedFile.value, { aiFallback: true })
+    if (applySmartResult(parsedFile, { successText: `AI 解析成功，共 ${parsedFile.questions?.length || 0} 道题目（${describeSmartStats(parsedFile.stats || {})}）` })) {
+      return
     }
-    if (result.parsed_questions?.length) {
-      applyParsedQuestions(result.parsed_questions)
-      ElMessage.success(`AI 兜底解析成功，共 ${result.parsed_questions.length} 道题目`)
-    } else {
+
+    const fallback = await smartParseFile(lastUploadedFile.value, { aiFallback: true, forceResiduals: true })
+    if (!applySmartResult(fallback, { successText: `AI 兜底解析完成，共 ${fallback.questions?.length || 0} 道题目` })) {
       parsedQuestions.value = []
       ElMessage.warning('AI 未能解析出题目，请更换文件或检查内容')
     }
@@ -636,6 +739,8 @@ const clearText = () => {
   result.value = null
   parsedQuestions.value = []
   parseErrors.value = []
+  smartStats.value = null
+  lastSource.value = { kind: 'text' }
 }
 
 onMounted(async () => {
@@ -874,6 +979,13 @@ onMounted(async () => {
   gap: 10px;
   margin: 16px 0;
   flex-wrap: wrap;
+}
+
+.smart-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
 }
 
 .error-list {

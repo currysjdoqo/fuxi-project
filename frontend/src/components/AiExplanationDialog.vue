@@ -46,7 +46,7 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+
 import { Loading } from '@element-plus/icons-vue'
 import { getAiExplanation } from '../api/index.js'
 

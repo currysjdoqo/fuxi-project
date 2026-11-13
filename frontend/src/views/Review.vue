@@ -23,78 +23,106 @@
             <el-icon class="is-loading"><Loading /></el-icon>
             <span>加载中...</span>
           </div>
-          <div v-else class="subject-grid">
-            <div
-              v-for="subject in subjects"
+          <template v-else>
+            <template v-for="group in folderGroups" :key="group.id">
+              <div v-if="group.subjects?.length" class="folder-section">
+                <div class="folder-header">
+                  <h3>{{ group.name }}</h3>
+                  <el-tag size="small" type="info">{{ group.subject_count }} 科目 · {{ group.question_count }} 题</el-tag>
+                </div>
+              <div class="subject-icon">
+                  <div
+                    v-for="subject in group.subjects"
               :key="subject.id"
               class="subject-card"
               @click="handleSubjectClick(subject)"
-            >
-              <div class="subject-icon">
+                  >
+                    <el-dropdown trigger="click" @command="(folderId) => handleMoveSubject(subject, folderId)" class="subject-move-btn">
+                      <el-button circle size="small" :icon="Folder" title="移动到文件夹" @click.stop />
+                      <template #dropdown>
+                        <el-dropdown-menu>
+                          <el-dropdown-item
+                            v-for="f in folderGroups.filter(g => g.id !== -1 && g.id !== subject.folder_id)"
+                            :key="f.id"
+                            :command="f.id"
+                          >移入「{{ f.name }}」</el-dropdown-item>
+                          <el-dropdown-item
+                            v-if="subject.folder_id !== null"
+                            :command="null"
+                            divided
+                          >移出文件夹（归为未分类）</el-dropdown-item>
+                        </el-dropdown-menu>
+                      </template>
+                    </el-dropdown>
+                    <div class="subject-icon">
                 <el-icon><component :is="getSubjectIcon(subject.name)" /></el-icon>
-              </div>
-              <div class="subject-info">
-                <h3>{{ subject.name }}</h3>
-                <p>{{ getReviewSourceCountLabel(subject) }}</p>
-                <div class="review-mode-selection">
-                  <el-radio-group
-                    :model-value="reviewSources[subject.id] || 'wrong'"
-                    @update:model-value="(source) => updateReviewSource(subject.id, source)"
-                    size="small"
-                  >
-                    <el-radio-button label="wrong">复习错题</el-radio-button>
-                    <el-radio-button label="important">复习重点题</el-radio-button>
-                    <el-radio-button label="combined">错题和重点题总和</el-radio-button>
-                  </el-radio-group>
-                  <el-radio-group 
-                    :model-value="reviewModes[subject.id] || 'sequential'" 
-                    @update:model-value="(mode) => updateReviewMode(subject.id, mode)"
-                    size="small"
-                  >
-                    <el-radio-button label="sequential">顺序复习</el-radio-button>
-                    <el-radio-button label="range">范围复习</el-radio-button>
-                    <el-radio-button label="random">随机抽题</el-radio-button>
-                  </el-radio-group>
-                  
-                  <template v-if="(reviewModes[subject.id] || 'sequential') === 'range'">
-                    <div class="range-controls">
-                      <el-input-number
-                        :model-value="reviewStartIndices[subject.id] || 1"
-                        @update:model-value="(val) => reviewStartIndices[subject.id] = val"
-                        :min="1"
-                        :max="Math.max(subject.question_count || 1, 1)"
-                        :step="1"
-                        controls-position="right"
-                        size="small"
-                      />
-                      <span>-</span>
-                      <el-input-number
-                        :model-value="reviewEndIndices[subject.id] || Math.min(10, subject.wrong_count)"
-                        @update:model-value="(val) => reviewEndIndices[subject.id] = val"
-                        :min="(reviewStartIndices[subject.id] || 1)"
-                        :max="Math.max(subject.question_count || 1, 1)"
-                        :step="1"
-                        controls-position="right"
-                        size="small"
-                      />
                     </div>
-                  </template>
-                  <template v-else>
-                    <el-input-number
-                      :model-value="reviewQuestionCounts[subject.id] || Math.min(10, subject.wrong_count)"
-                      @update:model-value="(val) => reviewQuestionCounts[subject.id] = val"
-                      :min="1"
-                      :max="Math.max(subject.question_count || 1, 1)"
-                      :step="1"
-                      controls-position="right"
-                      size="small"
-                    />
-                  </template>
+                    <div class="subject-info">
+                      <h3>{{ subject.name }}</h3>
+                      <p>{{ getReviewSourceCountLabel(subject) }}</p>
+                      <div class="review-mode-selection">
+                        <el-radio-group
+                          :model-value="reviewSources[subject.id] || 'wrong'"
+                          @update:model-value="(source) => updateReviewSource(subject.id, source)"
+                          size="small"
+                        >
+                          <el-radio-button label="wrong">复习错题</el-radio-button>
+                          <el-radio-button label="important">复习重点题</el-radio-button>
+                          <el-radio-button label="combined">错题和重点题总和</el-radio-button>
+                        </el-radio-group>
+                        <el-radio-group 
+                          :model-value="reviewModes[subject.id] || 'sequential'" 
+                          @update:model-value="(mode) => updateReviewMode(subject.id, mode)"
+                          size="small"
+                        >
+                          <el-radio-button label="sequential">顺序复习</el-radio-button>
+                          <el-radio-button label="range">范围复习</el-radio-button>
+                          <el-radio-button label="random">随机抽题</el-radio-button>
+                        </el-radio-group>
+                        
+                        <template v-if="(reviewModes[subject.id] || 'sequential') === 'range'">
+                          <div class="range-controls">
+                            <el-input-number
+                              :model-value="reviewStartIndices[subject.id] || 1"
+                              @update:model-value="(val) => reviewStartIndices[subject.id] = val"
+                              :min="1"
+                              :max="Math.max(subject.question_count || 1, 1)"
+                              :step="1"
+                              controls-position="right"
+                              size="small"
+                            />
+                            <span>-</span>
+                            <el-input-number
+                              :model-value="reviewEndIndices[subject.id] || Math.min(10, subject.wrong_count)"
+                              @update:model-value="(val) => reviewEndIndices[subject.id] = val"
+                              :min="(reviewStartIndices[subject.id] || 1)"
+                              :max="Math.max(subject.question_count || 1, 1)"
+                              :step="1"
+                              controls-position="right"
+                              size="small"
+                            />
+                          </div>
+                        </template>
+                        <template v-else>
+                          <el-input-number
+                            :model-value="reviewQuestionCounts[subject.id] || Math.min(10, subject.wrong_count)"
+                            @update:model-value="(val) => reviewQuestionCounts[subject.id] = val"
+                            :min="1"
+                            :max="Math.max(subject.question_count || 1, 1)"
+                            :step="1"
+                            controls-position="right"
+                            size="small"
+                          />
+                        </template>
+                      </div>
+                      <el-button type="primary" @click="startReview(subject)">开始复习</el-button>
+                    </div>
+                  </div>
                 </div>
-                <el-button type="primary" @click="startReview(subject)">开始复习</el-button>
               </div>
-            </div>
-          </div>
+            </template>
+            <el-empty v-if="!subjects.length" description="暂无科目" />
+          </template>
         </main>
 
         <main v-else class="practice-main">
@@ -294,7 +322,6 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { ElMessage } from 'element-plus'
 import ProfileModal from '../components/ProfileModal.vue'
 import Layout from '../components/Layout/Layout.vue'
 import {
@@ -312,10 +339,11 @@ import {
   Loading,
   SuccessFilled,
   CircleCloseFilled,
-  ChatDotRound
+  ChatDotRound,
+  Folder
 } from '@element-plus/icons-vue'
 import { useUser } from '../composables/useUser'
-import { getSubjects, getWrongQuestions, getQuestions, submitReviewAnswer, batchSubmitReviewAnswers, getAiExplanation, updateQuestionExplanation } from '../api'
+import { getSubjects, getFoldersWithSubjects, getWrongQuestions, getQuestions, submitReviewAnswer, batchSubmitReviewAnswers, getAiExplanation, updateQuestionExplanation, addSubjectToFolder, removeSubjectFromFolder } from '../api'
 import { getErrorMessage } from '../utils/errorHandler'
 import { clearAuthSession } from '../utils/authStorage'
 
@@ -326,6 +354,7 @@ const { username, avatar, loadUserInfo } = useUser()
 const showProfileModal = ref(false)
 const loading = ref(false)
 const subjects = ref([])
+const folderGroups = ref([])
 const selectedSubject = ref(null)
 const questions = ref([])
 const currentIndex = ref(0)
@@ -551,7 +580,8 @@ const saveExplanation = async () => {
 const loadSubjects = async () => {
   try {
     loading.value = true
-    subjects.value = await getSubjects()
+    folderGroups.value = await getFoldersWithSubjects()
+    subjects.value = folderGroups.value.flatMap(g => g.subjects || [])
     const [allWrongQuestions, allImportantQuestions] = await Promise.all([
       getWrongQuestions(),
       getQuestions(0, 1000, null, 'all', true)
@@ -593,6 +623,24 @@ const loadSubjects = async () => {
   }
 }
 
+const handleMoveSubject = async (subject, folderId) => {
+  try {
+    if (folderId === null) {
+      await removeSubjectFromFolder(subject.folder_id, subject.id)
+      subject.folder_id = null
+      ElMessage.success(`「${subject.name}」已移出文件夹`)
+    } else {
+      await addSubjectToFolder(folderId, subject.id)
+      const folder = folderGroups.value.find(f => f.id === folderId)
+      subject.folder_id = folderId
+      ElMessage.success(`「${subject.name}」已移入「${folder?.name || ''}」`)
+    }
+    await loadSubjects()
+  } catch (error) {
+    ElMessage.error(`移动失败：${error.response?.data?.detail || error.message}`)
+  }
+}
+
 const handleSubjectClick = async (subject) => {
   // 点击科目卡片时，初始化该科目的复习设置（如果尚未初始化）
   if (!reviewSources.value[subject.id]) {
@@ -614,7 +662,6 @@ const startReview = async (subject) => {
     loading.value = true
     selectedSubject.value = subject
     
-    // 获取当前科目的复习设置
     const source = reviewSources.value[subject.id] || 'wrong'
     const mode = reviewModes.value[subject.id] || 'sequential'
     const questionCount = reviewQuestionCounts.value[subject.id] || Math.min(10, subject.question_count || 10)
@@ -783,7 +830,6 @@ const submitCurrentAnswer = async () => {
     showExplanation.value = true
     ElMessage.info('已显示参考答案，请自行判断是否答对')
   } else {
-    // 简答题和编程题：用户自判
     answers.value[currentIndex.value] = {
       isCorrect: null,
       isPending: true,
@@ -1283,6 +1329,30 @@ onUnmounted(() => {
   gap: 18px;
 }
 
+.folder-section {
+  margin-bottom: 28px;
+  padding: 18px 20px;
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 6px 16px rgba(60, 40, 20, 0.06);
+}
+
+.folder-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 12px;
+  margin-bottom: 14px;
+  border-bottom: 1px dashed #e8d9c6;
+}
+
+.folder-header h3 {
+  font-size: 16px;
+  font-weight: 600;
+  color: #3d2f24;
+  margin: 0;
+}
+
 .subject-card {
   min-height: 220px;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(248, 244, 236, 0.94) 100%);
@@ -1297,6 +1367,23 @@ onUnmounted(() => {
   position: relative;
   overflow: hidden;
   box-shadow: 0 10px 30px rgba(44, 36, 22, 0.05);
+}
+
+.subject-move-btn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  opacity: 0;
+  transition: opacity 0.15s;
+  z-index: 2;
+}
+
+.subject-card:hover .subject-move-btn {
+  opacity: 0.6;
+}
+
+.subject-card:hover .subject-move-btn:hover {
+  opacity: 1;
 }
 
 .subject-card::before {

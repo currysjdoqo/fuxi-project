@@ -130,7 +130,7 @@
 <script setup>
 import { ref, watch, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElInput, ElMessage } from 'element-plus'
+
 import { ArrowRight, Camera, Check, CircleClose, CopyDocument, EditPen, Lock, Refresh, Setting } from '@element-plus/icons-vue'
 import { updateProfile, uploadAvatar as apiUploadAvatar, changePassword as apiChangePassword } from '../api'
 import { useUser } from '../composables/useUser'

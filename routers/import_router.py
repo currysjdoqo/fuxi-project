@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import quote
@@ -6,6 +7,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func
+from starlette.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 
 from auth import get_current_user
@@ -13,8 +15,9 @@ from database import get_db
 from models import Chapter, Question, Subject, User
 from routers.subjects import get_or_create_default_subject
 from utils.answer_normalizer import normalize_question_type, normalize_standard_answer
+from utils.content_hash import content_hash, normalize_content
 from utils.ai_access import get_user_deepseek_api_key
-from utils.ai_import import extract_text_for_ai_fallback, parse_image_with_ai, parse_questions_with_ai
+from utils.ai_import import parse_image_with_ai
 from utils.file_extract import (
     IMAGE_EXTENSIONS,
     TEXT_EXTRACT_EXTENSIONS,
@@ -23,10 +26,18 @@ from utils.file_extract import (
     save_uploaded_file,
 )
 from utils.import_template import generate_excel_template
-from utils.parser import parse_exercise_text, parse_file
+from utils.question_pipeline import (
+    ParseStats,
+    QuestionPayload,
+    SmartParseResult,
+    smart_parse_file,
+    smart_parse_text,
+)
 
 router = APIRouter()
 UPLOAD_DIR = Path("private_uploads")
+# 解析类接口同时跑多少个文件（pypdf/openpyxl/OCR 都是 CPU/IO 密集的同步代码）
+PARSE_CONCURRENCY = 4
 
 
 class ParsedQuestion(BaseModel):
@@ -55,9 +66,22 @@ class ParseRequest(BaseModel):
     text: str
 
 
+class SmartParseRequest(BaseModel):
+    text: str
+    source_name: Optional[str] = None
+    ai_fallback: bool = True
+    force_residuals: bool = False
+
+
 class AiParseRequest(BaseModel):
     text: str
     source_name: Optional[str] = None
+
+
+class SmartParseResponse(SmartParseResult):
+    filename: Optional[str] = None
+    ai_available: bool = False
+    fallback_used: bool = False
 
 
 class FileExtractResponse(BaseModel):
@@ -125,9 +149,6 @@ class QuestionCreateResponse(BaseModel):
     message: str
 
 
-def normalize_content(content: str) -> str:
-    return "".join(content.lower().split())
-
 
 def get_user_upload_dir(user_id: int) -> Path:
     return UPLOAD_DIR / str(user_id)
@@ -178,15 +199,12 @@ def resolve_chapter_id(
     if not name:
         return None
 
-    existing = (
-        db.query(Chapter)
-        .filter(
-            Chapter.subject_id == subject_id,
-            Chapter.user_id == current_user.id,
-            func.lower(Chapter.name) == name.lower(),
-        )
-        .first()
-    )
+    chapters = db.query(Chapter).filter(
+        Chapter.subject_id == subject_id,
+        Chapter.user_id == current_user.id,
+    ).all()
+    normalized_name = normalize_content(name)
+    existing = next((chapter for chapter in chapters if normalize_content(chapter.name) == normalized_name), None)
     if existing:
         return existing.id
 
@@ -223,19 +241,19 @@ def create_question(
     current_user: User = Depends(get_current_user),
 ):
     subject_id = resolve_subject_id(request.subject_id, db, current_user)
-    normalized_content = normalize_content(request.content)
-    all_questions = (
-        db.query(Question)
+    question_hash = content_hash(request.content)
+    duplicate = (
+        db.query(Question.id)
         .filter(
             Question.user_id == current_user.id,
             Question.subject_id == subject_id,
             Question.deleted_at.is_(None),
+            Question.content_hash == question_hash,
         )
-        .all()
+        .first()
     )
-    for question in all_questions:
-        if normalize_content(question.content) == normalized_content:
-            raise HTTPException(status_code=400, detail="Question already exists")
+    if duplicate:
+        raise HTTPException(status_code=400, detail="Question already exists")
 
     chapter_id = resolve_chapter_id(db, current_user, subject_id, request.chapter_id, request.chapter_name)
 
@@ -248,6 +266,7 @@ def create_question(
         options=request.options,
         answer=normalize_standard_answer(request.type, request.answer),
         explanation=request.explanation or "",
+        content_hash=question_hash,
     )
     db.add(new_question)
     db.commit()
@@ -256,55 +275,163 @@ def create_question(
 
 
 @router.post("/import/parse", response_model=List[ParsedQuestion])
-def parse_questions(request: ParseRequest):
-    return parse_exercise_text(request.text)
+async def parse_questions(request: ParseRequest):
+    result = await smart_parse_text(request.text, ai_fallback=False)
+    return result.questions
 
 
 @router.post("/import/ai-parse", response_model=AiParseResponse)
 async def ai_parse_questions(
     request: AiParseRequest,
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     api_key = get_user_deepseek_api_key(current_user)
     if not api_key:
         raise HTTPException(status_code=400, detail="Please configure your personal DeepSeek API Key first")
-    questions, errors = await parse_questions_with_ai(request.text, request.source_name, api_key=api_key)
-    return {
-        "parsed_questions": [ParsedQuestion(**q) for q in questions],
-        "errors": errors,
-        "fallback_used": True,
-    }
+    result = await smart_parse_text(
+        request.text,
+        api_key=api_key,
+        db=db,
+        user_id=current_user.id,
+        source_name=request.source_name,
+        ai_fallback=True,
+        min_coverage=1.0,
+    )
+    return AiParseResponse(
+        parsed_questions=result.questions,
+        errors=result.errors,
+        fallback_used=result.stats.ai_used,
+    )
 
 
 @router.post("/import/ai-parse-file", response_model=ParseFileResponse)
 async def ai_parse_uploaded_file(
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
+    result = await _parse_uploaded_smart(file, True, True, current_user, db)
+    return ParseFileResponse(
+        filename=result.filename or "",
+        parsed_questions=result.questions,
+        errors=result.errors,
+        fallback_used=result.fallback_used,
+    )
+
+
+@router.post("/import/smart-parse", response_model=SmartParseResponse)
+async def smart_parse(
+    request: SmartParseRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    api_key = get_user_deepseek_api_key(current_user)
+    result = await smart_parse_text(
+        request.text,
+        api_key=api_key,
+        db=db,
+        user_id=current_user.id,
+        source_name=request.source_name,
+        ai_fallback=request.ai_fallback,
+        min_coverage=1.0 if request.force_residuals else None,
+    )
+    return SmartParseResponse(
+        **result.model_dump(),
+        ai_available=bool(api_key),
+        fallback_used=result.stats.ai_used,
+    )
+
+
+async def _parse_uploaded_smart(
+    file: UploadFile,
+    ai_fallback: bool,
+    force_residuals: bool,
+    current_user: User,
+    db: Session,
+) -> SmartParseResponse:
     if not file.filename:
         raise HTTPException(status_code=400, detail="Empty filename")
-
     file_bytes = await file.read()
     if not file_bytes:
         raise HTTPException(status_code=400, detail="Uploaded file is empty")
 
     api_key = get_user_deepseek_api_key(current_user)
-    if not api_key:
-        raise HTTPException(status_code=400, detail="Please configure your personal DeepSeek API Key first")
-
     suffix = Path(file.filename).suffix.lower()
-    if suffix in IMAGE_EXTENSIONS:
-        questions, errors = await parse_image_with_ai(file_bytes, file.filename, api_key=api_key)
-    else:
-        text = extract_text_for_ai_fallback(file.filename, file_bytes)
-        questions, errors = await parse_questions_with_ai(text, file.filename, api_key=api_key)
+    threshold = 1.0 if force_residuals else None
 
-    return {
-        "filename": file.filename,
-        "parsed_questions": [ParsedQuestion(**q) for q in questions],
-        "errors": errors,
-        "fallback_used": True,
-    }
+    if suffix in IMAGE_EXTENSIONS:
+        try:
+            ocr_text = await run_in_threadpool(extract_text_from_file, file.filename, file_bytes)
+        except HTTPException:
+            ocr_text = ""
+        if ocr_text.strip():
+            result = await smart_parse_text(
+                ocr_text,
+                api_key=api_key,
+                db=db,
+                user_id=current_user.id,
+                source_name=file.filename,
+                ai_fallback=ai_fallback,
+                min_coverage=threshold,
+            )
+            result.stats.source = "ocr"
+            if result.questions or not api_key:
+                return SmartParseResponse(
+                    **result.model_dump(),
+                    filename=file.filename,
+                    ai_available=bool(api_key),
+                    fallback_used=result.stats.ai_used,
+                )
+        if not api_key:
+            raise HTTPException(
+                status_code=400,
+                detail="图片未识别出可用题目，请配置 DeepSeek API Key 后使用 AI 图片识别",
+            )
+        questions, errors = await parse_image_with_ai(file_bytes, file.filename, api_key=api_key)
+        payloads = [QuestionPayload(**question, source="vision") for question in questions]
+        stats = ParseStats(
+            parsed_count=len(payloads),
+            ai_used=True,
+            ai_added=len(payloads),
+            ai_added_questions=len(payloads),
+            source="vision",
+        )
+        return SmartParseResponse(
+            questions=payloads,
+            stats=stats,
+            errors=errors,
+            filename=file.filename,
+            ai_available=True,
+            fallback_used=True,
+        )
+
+    result = await smart_parse_file(
+        file.filename,
+        file_bytes,
+        api_key=api_key,
+        db=db,
+        user_id=current_user.id,
+        ai_fallback=ai_fallback,
+        min_coverage=threshold,
+    )
+    return SmartParseResponse(
+        **result.model_dump(),
+        filename=file.filename,
+        ai_available=bool(api_key),
+        fallback_used=result.stats.ai_used,
+    )
+
+
+@router.post("/import/smart-parse-file", response_model=SmartParseResponse)
+async def smart_parse_uploaded_file(
+    file: UploadFile = File(...),
+    ai_fallback: bool = Query(default=True),
+    force_residuals: bool = Query(default=False),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return await _parse_uploaded_smart(file, ai_fallback, force_residuals, current_user, db)
 
 
 @router.post("/import/extract-file", response_model=FileExtractResponse)
@@ -330,12 +457,12 @@ async def extract_file(
             "asset_download_url": build_private_asset_download_url(saved_name, file.filename),
         }
 
-    text = extract_text_from_file(file.filename, file_bytes)
-    parsed = parse_exercise_text(text)
+    text = await run_in_threadpool(extract_text_from_file, file.filename, file_bytes)
+    parsed = await smart_parse_text(text, ai_fallback=False)
     return {
         "filename": file.filename,
         "extracted_text": text,
-        "parsed_count": len(parsed),
+        "parsed_count": len(parsed.questions),
         "asset_url": build_private_asset_url(saved_name),
         "asset_ext": suffix,
         "asset_saved_name": saved_name,
@@ -383,13 +510,13 @@ async def parse_uploaded_file(
     if not file_bytes:
         raise HTTPException(status_code=400, detail="Uploaded file is empty")
 
-    questions, errors = parse_file(file_bytes, file.filename)
-    return {
-        "filename": file.filename,
-        "parsed_questions": [ParsedQuestion(**q) for q in questions],
-        "errors": errors,
-        "fallback_used": False,
-    }
+    result = await smart_parse_file(file.filename, file_bytes, ai_fallback=False)
+    return ParseFileResponse(
+        filename=file.filename,
+        parsed_questions=result.questions,
+        errors=result.errors,
+        fallback_used=False,
+    )
 
 
 @router.post("/import/batch-parse", response_model=BatchParseResponse)
@@ -403,26 +530,39 @@ async def batch_parse_files(
     all_questions: List[ParsedQuestion] = []
     all_errors: List[str] = []
 
+    uploads: List[tuple[str, bytes]] = []
     for file in files:
         if not file.filename:
             continue
-        try:
-            file_bytes = await file.read()
-            if not file_bytes:
-                all_errors.append(f"File {file.filename} is empty")
-                fail_files += 1
-                continue
+        uploads.append((file.filename, await file.read()))
 
-            questions, errors = parse_file(file_bytes, file.filename)
-            if errors:
-                all_errors.extend([f"{file.filename}: {err}" for err in errors])
-            if questions:
-                all_questions.extend([ParsedQuestion(**q) for q in questions])
-                success_files += 1
-            else:
-                fail_files += 1
-        except Exception as exc:
-            all_errors.append(f"File {file.filename} parse failed: {exc}")
+    semaphore = asyncio.Semaphore(PARSE_CONCURRENCY)
+
+    async def _parse_one(filename: str, file_bytes: bytes):
+        async with semaphore:
+            return await smart_parse_file(filename, file_bytes, ai_fallback=False)
+
+    outcomes = await asyncio.gather(
+        *(_parse_one(filename, file_bytes) for filename, file_bytes in uploads),
+        return_exceptions=True,
+    )
+
+    for (filename, file_bytes), outcome in zip(uploads, outcomes):
+        if not file_bytes:
+            all_errors.append(f"File {filename} is empty")
+            fail_files += 1
+            continue
+        if isinstance(outcome, Exception):
+            all_errors.append(f"File {filename} parse failed: {outcome}")
+            fail_files += 1
+            continue
+        result = outcome
+        if result.errors:
+            all_errors.extend([f"{filename}: {err}" for err in result.errors])
+        if result.questions:
+            all_questions.extend(result.questions)
+            success_files += 1
+        else:
             fail_files += 1
 
     return {
@@ -434,7 +574,7 @@ async def batch_parse_files(
     }
 
 
-def _process_single_file(filename: str, file_bytes: bytes, upload_dir: Path) -> SingleFileItem:
+async def _process_single_file(filename: str, file_bytes: bytes, upload_dir: Path) -> SingleFileItem:
     suffix = Path(filename).suffix.lower()
     saved_name = ""
     asset_url = ""
@@ -444,8 +584,9 @@ def _process_single_file(filename: str, file_bytes: bytes, upload_dir: Path) -> 
     file_type = "asset"
 
     if suffix in TEXT_EXTRACT_EXTENSIONS:
-        text_content = extract_text_from_file(filename, file_bytes)
-        parsed_questions = [ParsedQuestion(**q) for q in parse_exercise_text(text_content)]
+        text_content = await run_in_threadpool(extract_text_from_file, filename, file_bytes)
+        parsed = await smart_parse_text(text_content, ai_fallback=False)
+        parsed_questions = list(parsed.questions)
         file_type = "text"
     else:
         saved_name, _ = save_uploaded_file(filename, file_bytes, upload_dir)
@@ -475,36 +616,51 @@ async def extract_multiple_files(
     all_assets: List[SingleFileItem] = []
     user_upload_dir = get_user_upload_dir(current_user.id)
 
+    uploads: List[tuple[str, bytes]] = []
     for file in files:
         if not file.filename:
             continue
         total_files += 1
-        try:
-            file_bytes = await file.read()
-            if not file_bytes:
-                continue
-
-            suffix = Path(file.filename).suffix.lower()
-            if suffix == ".zip":
-                zip_items = extract_zip_file(file_bytes, user_upload_dir)
-                for item in zip_items:
-                    processed_item = _process_single_file(item["filename"], item["file_bytes"], user_upload_dir)
-                    if processed_item.text_content:
-                        all_text_contents.append(f"---\n{processed_item.filename}\n---\n{processed_item.text_content}\n")
-                        all_parsed_questions.extend(processed_item.parsed_questions)
-                    if processed_item.file_type == "asset":
-                        all_assets.append(processed_item)
-                    processed_files += 1
-            else:
-                processed_item = _process_single_file(file.filename, file_bytes, user_upload_dir)
-                if processed_item.text_content:
-                    all_text_contents.append(f"---\n{processed_item.filename}\n---\n{processed_item.text_content}\n")
-                    all_parsed_questions.extend(processed_item.parsed_questions)
-                if processed_item.file_type == "asset":
-                    all_assets.append(processed_item)
-                processed_files += 1
-        except Exception:
+        file_bytes = await file.read()
+        if not file_bytes:
             continue
+        uploads.append((file.filename, file_bytes))
+
+    semaphore = asyncio.Semaphore(PARSE_CONCURRENCY)
+
+    async def _process_one(filename: str, file_bytes: bytes):
+        async with semaphore:
+            if Path(filename).suffix.lower() == ".zip":
+                zip_items = await run_in_threadpool(extract_zip_file, file_bytes, user_upload_dir)
+                results = []
+                for item in zip_items:
+                    results.append(
+                        await _process_single_file(
+                            item["filename"],
+                            item["file_bytes"],
+                            user_upload_dir,
+                        )
+                    )
+                return results
+            return [await _process_single_file(filename, file_bytes, user_upload_dir)]
+
+    outcomes = await asyncio.gather(
+        *(_process_one(filename, file_bytes) for filename, file_bytes in uploads),
+        return_exceptions=True,
+    )
+
+    for outcome in outcomes:
+        if isinstance(outcome, Exception):
+            continue
+        for processed_item in outcome:
+            if processed_item.text_content:
+                all_text_contents.append(
+                    f"---\n{processed_item.filename}\n---\n{processed_item.text_content}\n"
+                )
+                all_parsed_questions.extend(processed_item.parsed_questions)
+            if processed_item.file_type == "asset":
+                all_assets.append(processed_item)
+            processed_files += 1
 
     return {
         "total_files": total_files,
@@ -516,51 +672,89 @@ async def extract_multiple_files(
 
 
 @router.post("/import", response_model=ImportResponse)
-def import_questions(
+async def import_questions(
     request: ImportRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     subject_id = resolve_subject_id(request.subject_id, db, current_user)
-    parsed_questions = [q.model_dump() for q in request.questions] if request.questions is not None else parse_exercise_text(request.text)
+    if request.questions is not None:
+        parsed_questions = [q.model_dump() for q in request.questions]
+    else:
+        parsed = await smart_parse_text(request.text, ai_fallback=False)
+        parsed_questions = [q.model_dump() for q in parsed.questions]
     parsed_count = len(parsed_questions)
     inserted_count = 0
 
-    known_contents = {
-        normalize_content(question.content)
-        for question in db.query(Question).filter(
+    # 只按哈希查重：一次索引查询，不再把整个题库的正文读进内存
+    incoming_hashes = {content_hash(question["content"]) for question in parsed_questions}
+    known_hashes = {
+        row[0]
+        for row in db.query(Question.content_hash)
+        .filter(
             Question.user_id == current_user.id,
             Question.subject_id == subject_id,
             Question.deleted_at.is_(None),
-        ).all()
+            Question.content_hash.in_(incoming_hashes),
+        )
+        .all()
+        if row[0]
     }
+
+    # 预加载科目下章节，按 id / 名称建索引，避免每题都查一次章节表
+    chapters = (
+        db.query(Chapter)
+        .filter(Chapter.subject_id == subject_id, Chapter.user_id == current_user.id)
+        .all()
+    )
+    chapter_by_id = {chapter.id: chapter for chapter in chapters}
+    chapter_by_name = {normalize_content(chapter.name): chapter for chapter in chapters}
+    next_sort_order = max([chapter.sort_order or 0 for chapter in chapters], default=0)
 
     for question in parsed_questions:
         normalized_type = normalize_question_type(question.get("type", "single"))
-        normalized_content = normalize_content(question["content"])
-        if normalized_content in known_contents:
+        question_hash = content_hash(question["content"])
+        if question_hash in known_hashes:
             continue
-        chapter_id = resolve_chapter_id(
-            db,
-            current_user,
-            subject_id,
-            question.get("chapter_id"),
-            question.get("chapter_name", ""),
-        )
+
+        chapter = None
+        chapter_id_value = question.get("chapter_id")
+        if chapter_id_value:
+            chapter = chapter_by_id.get(int(chapter_id_value))
+            if not chapter:
+                raise HTTPException(status_code=400, detail="章节不存在或不属于该科目")
+        else:
+            chapter_name = " ".join((question.get("chapter_name") or "").strip().split())
+            if chapter_name:
+                chapter = chapter_by_name.get(normalize_content(chapter_name))
+                if not chapter:
+                    next_sort_order += 1
+                    chapter = Chapter(
+                        user_id=current_user.id,
+                        subject_id=subject_id,
+                        name=chapter_name,
+                        sort_order=next_sort_order,
+                    )
+                    db.add(chapter)
+                    db.flush()
+                    chapter_by_id[chapter.id] = chapter
+                    chapter_by_name[normalize_content(chapter_name)] = chapter
+
         db.add(
             Question(
                 user_id=current_user.id,
                 subject_id=subject_id,
-                chapter_id=chapter_id,
+                chapter_id=chapter.id if chapter else None,
                 type=normalized_type,
                 content=question["content"],
                 options=question["options"],
                 answer=normalize_standard_answer(normalized_type, question["answer"]),
                 explanation=question.get("explanation", ""),
+                content_hash=question_hash,
             )
         )
         inserted_count += 1
-        known_contents.add(normalized_content)
+        known_hashes.add(question_hash)
 
     db.commit()
     return {"parsed_count": parsed_count, "inserted_count": inserted_count}

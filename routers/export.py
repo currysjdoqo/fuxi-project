@@ -11,7 +11,7 @@ from database import get_db
 from models import Question, Subject, User
 from utils.exporter import export_to_pdf, export_to_word, get_supported_types
 
-router = APIRouter(prefix="/export", tags=["瀵煎嚭"])
+router = APIRouter(prefix="/export", tags=["导出"])
 
 
 class ExportInfo(BaseModel):
@@ -27,7 +27,7 @@ def _get_owned_subject(db: Session, subject_id: int, current_user: User) -> Subj
         Subject.user_id == current_user.id,
     ).first()
     if not subject:
-        raise HTTPException(status_code=404, detail="绉戠洰涓嶅瓨鍦?")
+        raise HTTPException(status_code=404, detail="科目不存在")
     return subject
 
 
@@ -125,7 +125,7 @@ def export_questions(
 
     questions = query.all()
     if not questions:
-        raise HTTPException(status_code=400, detail="娌℃湁鍙鍑虹殑棰樼洰")
+        raise HTTPException(status_code=400, detail="没有可导出的题目")
 
     question_list = [
         {

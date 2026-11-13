@@ -135,18 +135,36 @@ def get_friends(
         Friendship.status == "accepted",
     ).all()
 
+    # 一次取出所有好友资料 + 一次聚合出每个好友的未读数，避免按好友逐个查询
+    friend_ids = [
+        friendship.friend_id if friendship.user_id == current_user.id else friendship.user_id
+        for friendship in friendships
+    ]
+    friends_by_id = {}
+    unread_by_sender = {}
+    if friend_ids:
+        friends_by_id = {
+            user.id: user for user in db.query(User).filter(User.id.in_(friend_ids)).all()
+        }
+        unread_by_sender = dict(
+            db.query(Message.sender_id, func.count(Message.id))
+            .filter(
+                Message.sender_id.in_(friend_ids),
+                Message.receiver_id == current_user.id,
+                Message.is_read == 0,
+            )
+            .group_by(Message.sender_id)
+            .all()
+        )
+
     result = []
     for friendship in friendships:
         friend_id = friendship.friend_id if friendship.user_id == current_user.id else friendship.user_id
-        friend = db.query(User).filter(User.id == friend_id).first()
+        friend = friends_by_id.get(friend_id)
         if not friend:
             continue
 
-        unread_count = db.query(func.count(Message.id)).filter(
-            Message.sender_id == friend.id,
-            Message.receiver_id == current_user.id,
-            Message.is_read == 0,
-        ).scalar() or 0
+        unread_count = unread_by_sender.get(friend.id, 0)
 
         result.append({
             "user_id": friend.id,
@@ -171,9 +189,14 @@ def get_pending_requests(
         Friendship.status == "pending",
     ).all()
 
+    requester_ids = [friendship.user_id for friendship in requests]
+    users_by_id = {}
+    if requester_ids:
+        users_by_id = {user.id: user for user in db.query(User).filter(User.id.in_(requester_ids)).all()}
+
     result = []
     for friendship in requests:
-        user = db.query(User).filter(User.id == friendship.user_id).first()
+        user = users_by_id.get(friendship.user_id)
         if not user:
             continue
 

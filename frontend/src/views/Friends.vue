@@ -306,7 +306,6 @@ import {
   Share,
   User,
 } from '@element-plus/icons-vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   acceptFriendRequest,
   acceptShare,
@@ -341,6 +340,7 @@ const shares = ref([])
 const selectedFriend = ref(null)
 const messages = ref([])
 const subjects = ref([])
+const folderGroups = ref([])
 const selectedSubjectId = ref(null)
 const currentUserId = ref(Number(getAuthUserId()) || null)
 const messageInput = ref('')
@@ -473,8 +473,8 @@ const loadShareData = async () => {
 }
 
 const loadSubjectsData = async () => {
-  const result = await getSubjects()
-  subjects.value = Array.isArray(result) ? result : (result.subjects || [])
+  folderGroups.value = await getFoldersWithSubjects()
+  subjects.value = folderGroups.value.flatMap(g => g.subjects || [])
 }
 
 const loadMessagesData = async (friendId, { silent = false } = {}) => {

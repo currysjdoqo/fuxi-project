@@ -2,8 +2,8 @@ import re
 
 
 VALID_QUESTION_TYPES = {"single", "multi", "judge", "fill", "short", "code"}
-JUDGE_TRUE_ALIASES = {"对", "正确", "TRUE", "T", "YES", "Y", "A", "√", "✅", "✔"}
-JUDGE_FALSE_ALIASES = {"错", "错误", "FALSE", "F", "NO", "N", "B", "×", "❌", "✘", "X"}
+JUDGE_TRUE_ALIASES = {"对", "正确", "TRUE", "T", "YES", "Y", "A", "√", "✅", "✔", "✓"}
+JUDGE_FALSE_ALIASES = {"错", "错误", "FALSE", "F", "NO", "N", "B", "×", "❌", "✘", "✕", "✖", "X"}
 
 
 def normalize_answer(answer: str) -> str:
@@ -33,7 +33,7 @@ def normalize_question_type(question_type: str) -> str:
 
 def normalize_standard_answer(question_type: str, answer: str) -> str:
     normalized_type = normalize_question_type(question_type)
-    raw = str(answer or "").strip()
+    raw = re.split(r"\s*我的答案\s*[:：]|\s*得分\s*[:：]", str(answer or "").strip())[0].strip()
     if normalized_type == "multi":
         return normalize_multi_answer(raw)
     if normalized_type == "single":

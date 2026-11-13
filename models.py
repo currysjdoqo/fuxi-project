@@ -28,11 +28,24 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class Folder(Base):
+    """科目文件夹，用于在 Subject 之上再做一层分类（如"大二上"、"考研复习"）。"""
+
+    __tablename__ = "folders"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    name = Column(String, index=True, nullable=False)
+    sort_order = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class Subject(Base):
     __tablename__ = "subjects"
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=True)
+    folder_id = Column(Integer, ForeignKey("folders.id"), index=True, nullable=True)
     name = Column(String, index=True, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -63,6 +76,8 @@ class Question(Base):
     chapter_id = Column(Integer, ForeignKey("chapters.id"), index=True, nullable=True)
     type = Column(String, index=True)
     content = Column(String, index=True)
+    # 归一化内容的 sha256，导入判重走索引，不用全表读正文
+    content_hash = Column(String(64), index=True, nullable=True)
     options = Column(JSON)
     answer = Column(String)
     explanation = Column(String)
@@ -185,5 +200,24 @@ class PaymentOrder(Base):
     callback_payload = Column(JSON, nullable=True)
     paid_at = Column(DateTime, nullable=True)
     applied_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class AiParseCache(Base):
+    """AI 解析结果缓存：同一段文本（同一用户）只调用一次模型。"""
+
+    __tablename__ = "ai_parse_cache"
+    __table_args__ = (
+        UniqueConstraint("user_id", "text_hash", "kind", name="uq_ai_parse_cache_user_hash"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=True)
+    text_hash = Column(String(64), index=True, nullable=False)
+    kind = Column(String(32), nullable=False, default="residual")
+    payload = Column(JSON, nullable=True)
+    question_count = Column(Integer, default=0)
+    hit_count = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

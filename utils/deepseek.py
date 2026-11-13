@@ -6,8 +6,7 @@ from __future__ import annotations
 
 import httpx
 
-DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
-DEEPSEEK_MODEL = "deepseek-v4-flash"
+from utils.ai_http import DEEPSEEK_API_URL, DEEPSEEK_MODEL, post_chat
 
 
 def has_api_key(api_key: str | None = None) -> bool:
@@ -29,11 +28,11 @@ async def get_ai_explanation(
 
     type_labels = {
         "single": "单选题",
-        "multiple": "多选题",
+        "multi": "多选题",
         "judge": "判断题",
         "fill": "填空题",
-        "short_answer": "简答题",
-        "programming": "编程题",
+        "short": "简答题",
+        "code": "编程题",
     }
     type_name = type_labels.get(question_type, question_type)
 
@@ -58,20 +57,16 @@ async def get_ai_explanation(
 """
 
     try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.post(
-                DEEPSEEK_API_URL,
-                headers={
-                    "Authorization": f"Bearer {key}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": DEEPSEEK_MODEL,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "temperature": 0.5,
-                    "max_tokens": 800,
-                },
-            )
+        response = await post_chat(
+            {
+                "model": DEEPSEEK_MODEL,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.5,
+                "max_tokens": 800,
+            },
+            key,
+            timeout=60.0,
+        )
     except httpx.ConnectError:
         return "无法连接 DeepSeek API"
     except httpx.TimeoutException:

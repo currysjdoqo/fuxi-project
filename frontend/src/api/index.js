@@ -70,8 +70,46 @@ export const getSubjects = async () => {
   return response.data
 }
 
-export const createSubject = async (name) => {
-  const response = await api.post('/subjects', { name })
+export const createSubject = async (name, folderId = null) => {
+  const body = { name }
+  if (folderId !== null) body.folder_id = folderId
+  const response = await api.post('/subjects', body)
+  return response.data
+}
+
+// ---- Folder API ----
+export const getFolders = async () => {
+  const response = await api.get('/folders')
+  return response.data
+}
+
+export const getFoldersWithSubjects = async () => {
+  const response = await api.get('/folders/with-subjects')
+  return response.data
+}
+
+export const createFolder = async (name) => {
+  const response = await api.post('/folders', { name })
+  return response.data
+}
+
+export const updateFolder = async (folderId, data) => {
+  const response = await api.patch(`/folders/${folderId}`, data)
+  return response.data
+}
+
+export const deleteFolder = async (folderId) => {
+  const response = await api.delete(`/folders/${folderId}`)
+  return response.data
+}
+
+export const addSubjectToFolder = async (folderId, subjectId) => {
+  const response = await api.post(`/folders/${folderId}/subjects/${subjectId}`)
+  return response.data
+}
+
+export const removeSubjectFromFolder = async (folderId, subjectId) => {
+  const response = await api.delete(`/folders/${folderId}/subjects/${subjectId}`)
   return response.data
 }
 
@@ -165,23 +203,6 @@ export const parseQuestions = async (text) => {
   return response.data
 }
 
-export const parseQuestionsWithAi = async (text, sourceName = '') => {
-  const response = await api.post('/import/ai-parse', {
-    text,
-    source_name: sourceName
-  })
-  return response.data
-}
-
-export const parseUploadedFileWithAi = async (file) => {
-  const formData = new FormData()
-  formData.append('file', file)
-  const response = await api.post('/import/ai-parse-file', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' }
-  })
-  return response.data
-}
-
 export const extractTextFromFile = async (file) => {
   const formData = new FormData()
   formData.append('file', file)
@@ -221,6 +242,26 @@ export const parseUploadedFile = async (file) => {
   const formData = new FormData()
   formData.append('file', file)
   const response = await api.post('/import/parse-file', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  })
+  return response.data
+}
+
+export const smartParseText = async (text, { sourceName = '', aiFallback = false, forceResiduals = false } = {}) => {
+  const response = await api.post('/import/smart-parse', {
+    text,
+    source_name: sourceName,
+    ai_fallback: aiFallback,
+    force_residuals: forceResiduals
+  })
+  return response.data
+}
+
+export const smartParseFile = async (file, { aiFallback = false, forceResiduals = false } = {}) => {
+  const formData = new FormData()
+  formData.append('file', file)
+  const response = await api.post('/import/smart-parse-file', formData, {
+    params: { ai_fallback: aiFallback, force_residuals: forceResiduals },
     headers: { 'Content-Type': 'multipart/form-data' }
   })
   return response.data

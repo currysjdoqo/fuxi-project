@@ -45,6 +45,13 @@ cat > .env << EOF
 ALLOWED_ORIGINS=http://localhost:80,http://localhost,http://127.0.0.1,http://$SERVER_IP
 WRONG_QUESTION_REMOVE_THRESHOLD=5
 DEEPSEEK_API_KEY=
+APP_BASE_URL=http://$SERVER_IP
+FRONTEND_BASE_URL=http://$SERVER_IP
+ALIPAY_APP_ID=
+ALIPAY_PRIVATE_KEY=
+ALIPAY_PUBLIC_KEY=
+# 沙箱测试时打开下一行
+#ALIPAY_GATEWAY=https://openapi-sandbox.dl.alipaydev.com/gateway.do
 EOF
 
 echo ""

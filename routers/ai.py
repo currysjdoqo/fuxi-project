@@ -1,32 +1,13 @@
-from collections import defaultdict
-import threading
-import time
-
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from auth import get_current_user
+from auth import check_auth_rate_limit, get_current_user
 from database import get_db
 from models import Question, Subject, User
 from utils.ai_access import get_user_deepseek_api_key
 from utils.deepseek import get_ai_explanation, has_api_key
 
 router = APIRouter(prefix="/ai", tags=["AI"])
-
-rate_limit_store = defaultdict(list)
-RATE_LIMIT = 5
-RATE_LIMIT_WINDOW = 60
-_rate_limit_lock = threading.Lock()
-
-
-def check_rate_limit(user_id: int) -> bool:
-    now = time.time()
-    with _rate_limit_lock:
-        rate_limit_store[user_id] = [t for t in rate_limit_store[user_id] if now - t < RATE_LIMIT_WINDOW]
-        if len(rate_limit_store[user_id]) >= RATE_LIMIT:
-            return False
-        rate_limit_store[user_id].append(now)
-    return True
 
 
 @router.get("/explain")
@@ -36,7 +17,7 @@ async def explain_question(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    if not check_rate_limit(current_user.id):
+    if not check_auth_rate_limit(f"ai:{current_user.id}"):
         raise HTTPException(status_code=429, detail="请求过于频繁")
 
     question = db.query(Question).filter(

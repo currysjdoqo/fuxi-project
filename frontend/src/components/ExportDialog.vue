@@ -97,7 +97,7 @@
 
 <script setup>
 import { ref, watch, computed } from 'vue'
-import { ElMessage } from 'element-plus'
+
 import { Download } from '@element-plus/icons-vue'
 import { exportQuestions, previewExport, getExportTypes } from '../api/index.js'
 

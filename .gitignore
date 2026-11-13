@@ -28,6 +28,7 @@ frontend/dist/
 # Uploads
 uploads/
 data/
+exports/
 
 # IDE
 .vscode/

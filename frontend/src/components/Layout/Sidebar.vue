@@ -83,7 +83,7 @@ const route = useRoute()
 
 const isMobileNav = computed(() => {
   if (typeof window === 'undefined') return false
-  return window.innerWidth <= 1180
+  return window.innerWidth <= 768
 })
 
 const defaultNavItems = [
@@ -251,7 +251,7 @@ const goToPath = (path) => {
   color: #fffaf1;
 }
 
-@media (max-width: 1180px) {
+@media (max-width: 768px) {
   .sidebar {
     position: fixed;
     inset: 0 auto 0 0;

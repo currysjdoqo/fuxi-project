@@ -1,4 +1,5 @@
 <template>
+  <Layout :username="username" :avatar="avatar" @show-profile="showProfileModal = true" @logout="handleLogout">
   <div class="chapters-page">
     <!-- 章节列表视图 -->
     <div v-if="!selectedChapter" class="chapter-list-view">
@@ -252,13 +253,17 @@
         </div>
       </div>
     </el-dialog>
-  </div>
+    </div>
+  </Layout>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { useRouter } from 'vue-router'
 import { ArrowLeft, CircleCheck, MagicStick } from '@element-plus/icons-vue'
+import Layout from '../components/Layout/Layout.vue'
+import { useUser } from '../composables/useUser'
+import { clearAuthSession } from '../utils/authStorage'
 import {
   getSubjects,
   getChapters,
@@ -273,7 +278,17 @@ import {
   createChapter
 } from '../api'
 
+const router = useRouter()
+const { username, avatar, loadUserInfo } = useUser()
+const showProfileModal = ref(false)
+const handleLogout = () => {
+  clearAuthSession()
+  router.push('/auth/login')
+  ElMessage.success('已退出登录')
+}
+
 const subjects = ref([])
+const folderGroups = ref([])
 const chapters = ref([])
 const selectedSubjectId = ref(null)
 const selectedChapter = ref(null)
@@ -393,11 +408,12 @@ const formatTime = (dt) => {
 }
 
 onMounted(async () => {
+  loadUserInfo()
   try {
-    const data = await getSubjects()
-    subjects.value = data
-    if (data.length) {
-      selectedSubjectId.value = data[0].id
+    folderGroups.value = await getFoldersWithSubjects()
+    subjects.value = folderGroups.value.flatMap(g => g.subjects || [])
+    if (subjects.value.length) {
+      selectedSubjectId.value = subjects.value[0].id
       await loadChapters()
     }
   } catch (error) {

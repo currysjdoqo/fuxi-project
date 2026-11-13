@@ -15,11 +15,13 @@ router = APIRouter()
 
 class SubjectCreateRequest(BaseModel):
     name: str
+    folder_id: int | None = None
 
 
 class SubjectOut(BaseModel):
     id: int
     name: str
+    folder_id: int | None = None
     question_count: int = 0
     wrong_count: int = 0
     created_at: datetime
@@ -66,6 +68,7 @@ def get_subjects(db: Session = Depends(get_db), current_user: User = Depends(get
         {
             "id": subject.id,
             "name": subject.name,
+            "folder_id": subject.folder_id,
             "question_count": question_count,
             "wrong_count": wrong_count,
             "created_at": subject.created_at,
@@ -92,11 +95,18 @@ def create_subject(
     if existing:
         raise HTTPException(status_code=400, detail="科目已存在")
 
-    subject = Subject(user_id=current_user.id, name=name)
+    subject = Subject(user_id=current_user.id, name=name, folder_id=request.folder_id)
     db.add(subject)
     db.commit()
     db.refresh(subject)
-    return {"id": subject.id, "name": subject.name, "question_count": 0, "wrong_count": 0, "created_at": subject.created_at}
+    return {
+        "id": subject.id,
+        "name": subject.name,
+        "folder_id": subject.folder_id,
+        "question_count": 0,
+        "wrong_count": 0,
+        "created_at": subject.created_at,
+    }
 
 
 @router.delete("/subjects/{subject_id}")

@@ -2,6 +2,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy import and_, func
 from sqlalchemy.orm import Session
 
 from auth import get_current_user
@@ -51,21 +52,44 @@ def get_wrong_questions(
             .first()
         )
         if not subject:
-            raise HTTPException(status_code=404, detail="绉戠洰涓嶅瓨鍦?")
+            raise HTTPException(status_code=404, detail="科目不存在")
         query = query.filter(Question.subject_id == subject_id)
 
     rows = query.order_by(WrongQuestion.added_at.desc()).all()
+
+    # 一次查出所有错题「最近一次练习作答」，避免每道错题单独查一次
+    last_answers = {}
+    question_ids = [wrong_question.question_id for wrong_question, _ in rows]
+    if question_ids:
+        latest = (
+            db.query(
+                PracticeRecord.question_id.label("question_id"),
+                func.max(PracticeRecord.practiced_at).label("last_time"),
+            )
+            .filter(
+                PracticeRecord.user_id == current_user.id,
+                PracticeRecord.question_id.in_(question_ids),
+            )
+            .group_by(PracticeRecord.question_id)
+            .subquery()
+        )
+        latest_rows = (
+            db.query(PracticeRecord.question_id, PracticeRecord.user_answer)
+            .join(
+                latest,
+                and_(
+                    PracticeRecord.question_id == latest.c.question_id,
+                    PracticeRecord.practiced_at == latest.c.last_time,
+                ),
+            )
+            .filter(PracticeRecord.user_id == current_user.id)
+            .all()
+        )
+        for question_id, user_answer in latest_rows:
+            last_answers[question_id] = user_answer
+
     result = []
     for wrong_question, question in rows:
-        last_record = (
-            db.query(PracticeRecord)
-            .filter(
-                PracticeRecord.question_id == wrong_question.question_id,
-                PracticeRecord.user_id == current_user.id,
-            )
-            .order_by(PracticeRecord.practiced_at.desc())
-            .first()
-        )
         result.append(
             {
                 "question_id": wrong_question.question_id,
@@ -77,7 +101,7 @@ def get_wrong_questions(
                 "explanation": question.explanation,
                 "added_at": wrong_question.added_at.isoformat(),
                 "review_count": wrong_question.review_count,
-                "last_user_answer": last_record.user_answer if last_record else None,
+                "last_user_answer": last_answers.get(wrong_question.question_id),
             }
         )
     return result
@@ -98,7 +122,7 @@ def remove_wrong_question(
         .first()
     )
     if not wrong_question:
-        raise HTTPException(status_code=404, detail="閿欓涓嶅瓨鍦?")
+        raise HTTPException(status_code=404, detail="错题不存在")
     db.delete(wrong_question)
     db.commit()
-    return {"message": "鍒犻櫎鎴愬姛"}
+    return {"message": "删除成功"}

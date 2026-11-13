@@ -1,14 +1,4 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import Home from '../views/Home.vue'
-import Import from '../views/Import.vue'
-import Review from '../views/Review.vue'
-import Settings from '../views/Settings.vue'
-import Trash from '../views/Trash.vue'
-import Plan from '../views/Plan.vue'
-import Register from '../views/Register.vue'
-import Login from '../views/Login.vue'
-import Friends from '../views/Friends.vue'
-import Chapters from '../views/Chapters.vue'
 import { getCurrentUser } from '../api'
 import { bootstrapLegacyAuth, clearAuthSession, getAuthToken, isAuthSessionReady } from '../utils/authStorage'
 
@@ -20,52 +10,52 @@ const routes = [
   {
     path: '/auth/register',
     name: 'Register',
-    component: Register
+    component: () => import('../views/Register.vue')
   },
   {
     path: '/auth/login',
     name: 'Login',
-    component: Login
+    component: () => import('../views/Login.vue')
   },
   {
     path: '/',
     name: 'Home',
-    component: Home
+    component: () => import('../views/Home.vue')
   },
   {
     path: '/import',
     name: 'Import',
-    component: Import
+    component: () => import('../views/Import.vue')
   },
   {
     path: '/review',
     name: 'Review',
-    component: Review
+    component: () => import('../views/Review.vue')
   },
   {
     path: '/settings',
     name: 'Settings',
-    component: Settings
+    component: () => import('../views/Settings.vue')
   },
   {
     path: '/trash',
     name: 'Trash',
-    component: Trash
+    component: () => import('../views/Trash.vue')
   },
   {
     path: '/plan',
     name: 'Plan',
-    component: Plan
+    component: () => import('../views/Plan.vue')
   },
   {
     path: '/friends',
     name: 'Friends',
-    component: Friends
+    component: () => import('../views/Friends.vue')
   },
   {
     path: '/chapters',
     name: 'Chapters',
-    component: Chapters
+    component: () => import('../views/Chapters.vue')
   }
 ]
 

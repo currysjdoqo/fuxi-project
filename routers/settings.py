@@ -30,26 +30,43 @@ class ClearDataRequest(BaseModel):
     password: str
 
 
-def _load_env_values() -> dict[str, str]:
-    values: dict[str, str] = {}
-    if not ENV_PATH.exists():
-        return values
+# .env 解析结果按文件的 mtime 缓存：作答提交等高频路径不再反复读盘
+_ENV_CACHE: dict[str, str] | None = None
+_ENV_CACHE_MTIME: float | None = None
 
+
+def _load_env_values() -> dict[str, str]:
+    global _ENV_CACHE, _ENV_CACHE_MTIME
+
+    if not ENV_PATH.exists():
+        return {}
+
+    mtime = ENV_PATH.stat().st_mtime
+    if _ENV_CACHE is not None and _ENV_CACHE_MTIME == mtime:
+        return dict(_ENV_CACHE)
+
+    values: dict[str, str] = {}
     for line in ENV_PATH.read_text(encoding="utf-8").splitlines():
         if not line.strip() or line.lstrip().startswith("#") or "=" not in line:
             continue
         key, value = line.split("=", 1)
         values[key.strip()] = value.strip().strip('"').strip("'")
-    return values
+
+    _ENV_CACHE = values
+    _ENV_CACHE_MTIME = mtime
+    return dict(values)
 
 
 def _write_env_value(key: str, value: str) -> None:
+    global _ENV_CACHE, _ENV_CACHE_MTIME
     values = _load_env_values()
     values[key] = value
     ENV_PATH.write_text(
         "\n".join(f'{env_key}="{env_value}"' for env_key, env_value in values.items()) + "\n",
         encoding="utf-8",
     )
+    _ENV_CACHE = None
+    _ENV_CACHE_MTIME = None
 
 
 def get_wrong_question_threshold() -> int:

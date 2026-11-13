@@ -68,7 +68,6 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
 import { CircleClose, Delete, Menu, Refresh, Star } from '@element-plus/icons-vue'
 import { useUser } from '../composables/useUser'
 import { clearAuthSession } from '../utils/authStorage'
@@ -92,6 +91,7 @@ const toggleMobileNav = () => {
   layoutRef.value?.toggleMobileNav()
 }
 const subjects = ref([])
+const folderGroups = ref([])
 const subjectId = ref(null)
 const trashList = ref([])
 const selectedIds = ref([])
@@ -130,7 +130,8 @@ const formatDate = (value) => {
 }
 
 const loadSubjects = async () => {
-  subjects.value = await getSubjects()
+  folderGroups.value = await getFoldersWithSubjects()
+  subjects.value = folderGroups.value.flatMap(g => g.subjects || [])
 }
 
 const loadTrash = async () => {

@@ -42,20 +42,24 @@ def get_trash(
         query = query.filter(Question.subject_id == subject_id)
 
     questions = query.order_by(Question.deleted_at.desc(), Question.id.desc()).all()
+    # 一次取出所有涉及的科目名，避免每条题目单独查一次 Subject
+    subject_ids = {question.subject_id for question in questions if question.subject_id}
+    subject_names = {}
+    if subject_ids:
+        subject_names = {
+            row.id: row.name
+            for row in db.query(Subject.id, Subject.name).filter(
+                Subject.user_id == current_user.id, Subject.id.in_(subject_ids)
+            )
+        }
+
     result = []
     for question in questions:
-        subject = (
-            db.query(Subject)
-            .filter(Subject.id == question.subject_id, Subject.user_id == current_user.id)
-            .first()
-            if question.subject_id
-            else None
-        )
         result.append(
             {
                 "id": question.id,
                 "subject_id": question.subject_id,
-                "subject_name": subject.name if subject else None,
+                "subject_name": subject_names.get(question.subject_id),
                 "type": question.type,
                 "content": question.content,
                 "answer": question.answer,

@@ -21,6 +21,7 @@ from routers.chapters import router as chapters_router
 from routers.export import router as export_router
 from routers.ai import router as ai_router
 from routers.billing import router as billing_router
+from routers.folders import router as folders_router
 from routers.import_router import router as import_router
 from routers.plan import router as plan_router
 from routers.practice import router as practice_router
@@ -81,6 +82,7 @@ app.include_router(plan_router, prefix="/api")
 app.include_router(export_router, prefix="/api")
 app.include_router(ai_router, prefix="/api")
 app.include_router(billing_router, prefix="/api")
+app.include_router(folders_router, prefix="/api")
 app.include_router(friends_router, prefix="/api")
 app.include_router(messages_router, prefix="/api")
 app.include_router(share_router, prefix="/api")

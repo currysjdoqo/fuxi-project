@@ -578,7 +578,7 @@ body {
   }
 }
 
-@media (max-width: 1180px) {
+@media (max-width: 768px) {
   .desktop-sidebar-handle {
     display: none !important;
   }

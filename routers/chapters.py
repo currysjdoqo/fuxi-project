@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime
 from typing import List, Optional
 
@@ -475,36 +476,32 @@ async def extract_all_knowledge(
     all_errors: list[str] = []
     tagged_count = 0
 
-    # 1. 打标签
-    tags, errors = await tag_questions_with_ai(question_dicts, api_key)
-    all_errors.extend(errors)
+    # 打标签 / 生成总结 / 生成大纲三者互不依赖，并发执行；最后只提交一次
+    (tags, tag_errors), (summary_md, summary_errors), (outline, outline_errors) = await asyncio.gather(
+        tag_questions_with_ai(question_dicts, api_key),
+        generate_summary_with_ai(question_dicts, chapter.name, api_key),
+        generate_outline_with_ai(question_dicts, chapter.name, api_key),
+    )
+    all_errors.extend(tag_errors)
+    all_errors.extend(summary_errors)
+    all_errors.extend(outline_errors)
+
     tag_map: dict[int, list[str]] = {item["index"]: item["tags"] for item in tags}
     for i, q in enumerate(questions):
         if i in tag_map:
             q.knowledge_tags = tag_map[i]
             tagged_count += 1
     chapter.tags_generated_at = datetime.utcnow()
-    db.commit()
 
-    # 2. 生成总结
-    summary_md, errors = await generate_summary_with_ai(
-        question_dicts, chapter.name, api_key,
-    )
-    all_errors.extend(errors)
     if summary_md:
         chapter.summary_md = summary_md
         chapter.summary_generated_at = datetime.utcnow()
-        db.commit()
 
-    # 3. 生成大纲
-    outline, errors = await generate_outline_with_ai(
-        question_dicts, chapter.name, api_key,
-    )
-    all_errors.extend(errors)
     if outline:
         chapter.outline_json = outline
         chapter.outline_generated_at = datetime.utcnow()
-        db.commit()
+
+    db.commit()
 
     return {
         "message": f"提炼完成：标签 {tagged_count} 题，总结 {'已生成' if summary_md else '失败'}，大纲 {'已生成' if outline else '失败'}",

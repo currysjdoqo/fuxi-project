@@ -1,10 +1,12 @@
 """AI 知识点提炼：为章节题目打标签、生成知识点总结和知识大纲。"""
 
+import asyncio
 from typing import Any, Optional
 
 import httpx
 
-from utils.ai_import import DEEPSEEK_API_URL, DEEPSEEK_MODEL, _extract_json_payload
+from utils.ai_http import DEEPSEEK_MODEL, post_chat
+from utils.ai_import import _extract_json_payload
 
 # 每题题干截取最大字符数
 CONTENT_PREVIEW_LEN = 150
@@ -30,24 +32,20 @@ def _prepare_questions_for_ai(questions: list[dict[str, Any]], max_count: int = 
 async def _call_deepseek(prompt: str, system_content: str, api_key: str) -> tuple[Any, list[str]]:
     """调用 DeepSeek 并解析 JSON 返回。"""
     try:
-        async with httpx.AsyncClient(timeout=90.0) as client:
-            response = await client.post(
-                DEEPSEEK_API_URL,
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": DEEPSEEK_MODEL,
-                    "messages": [
-                        {"role": "system", "content": system_content},
-                        {"role": "user", "content": prompt},
-                    ],
-                    "temperature": 0.3,
-                    "max_tokens": 4000,
-                    "response_format": {"type": "json_object"},
-                },
-            )
+        response = await post_chat(
+            {
+                "model": DEEPSEEK_MODEL,
+                "messages": [
+                    {"role": "system", "content": system_content},
+                    {"role": "user", "content": prompt},
+                ],
+                "temperature": 0.3,
+                "max_tokens": 4000,
+                "response_format": {"type": "json_object"},
+            },
+            api_key,
+            timeout=90.0,
+        )
     except httpx.TimeoutException:
         return None, ["AI 提炼超时，请稍后重试"]
     except httpx.ConnectError:
@@ -90,8 +88,12 @@ async def tag_questions_with_ai(
     all_tags: list[dict[str, Any]] = []
     all_errors: list[str] = []
 
-    for batch_start in range(0, len(questions), TAG_BATCH_SIZE):
-        batch = questions[batch_start:batch_start + TAG_BATCH_SIZE]
+    batches = [
+        (batch_start, questions[batch_start:batch_start + TAG_BATCH_SIZE])
+        for batch_start in range(0, len(questions), TAG_BATCH_SIZE)
+    ]
+
+    async def _tag_batch(batch_start: int, batch: list[dict[str, Any]]):
         prepared = _prepare_questions_for_ai(batch, TAG_BATCH_SIZE)
 
         prompt = f"""你是题库知识点标注助手。请为下方每道题目提取 1~3 个核心知识点标签。
@@ -108,9 +110,15 @@ async def tag_questions_with_ai(
         payload, errors = await _call_deepseek(
             prompt, "你是一个只返回合法 JSON 的知识点标注器。", api_key,
         )
+        return batch_start, batch, payload, errors
+
+    # 各批题目相互独立，并发请求；真正的并发上限由 utils.ai_http 控制
+    results = await asyncio.gather(*(_tag_batch(batch_start, batch) for batch_start, batch in batches))
+
+    for batch_start, batch, payload, errors in results:
         if errors:
             all_errors.extend(errors)
-            if errors and "API Key" in errors[0]:
+            if "API Key" in errors[0]:
                 break
             continue
 
@@ -171,23 +179,19 @@ async def generate_summary_with_ai(
 {__import__('json').dumps(prepared, ensure_ascii=False)}
 """
     try:
-        async with httpx.AsyncClient(timeout=90.0) as client:
-            response = await client.post(
-                DEEPSEEK_API_URL,
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": DEEPSEEK_MODEL,
-                    "messages": [
-                        {"role": "system", "content": "你是一个复习资料编写助手，输出 Markdown 格式的知识点总结。"},
-                        {"role": "user", "content": prompt},
-                    ],
-                    "temperature": 0.3,
-                    "max_tokens": 4000,
-                },
-            )
+        response = await post_chat(
+            {
+                "model": DEEPSEEK_MODEL,
+                "messages": [
+                    {"role": "system", "content": "你是一个复习资料编写助手，输出 Markdown 格式的知识点总结。"},
+                    {"role": "user", "content": prompt},
+                ],
+                "temperature": 0.3,
+                "max_tokens": 4000,
+            },
+            api_key,
+            timeout=90.0,
+        )
     except httpx.TimeoutException:
         return "", ["AI 生成总结超时，请稍后重试"]
     except httpx.ConnectError:

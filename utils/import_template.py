@@ -139,7 +139,6 @@ def parse_excel_to_questions(file_bytes: bytes) -> list:
 
     wb = load_workbook(BytesIO(file_bytes), data_only=True)
     ws = wb.active
-
     questions = []
     errors = []
 
@@ -148,44 +147,28 @@ def parse_excel_to_questions(file_bytes: bytes) -> list:
             row_data = {}
             for col_idx, col in enumerate(COLUMNS, 1):
                 cell_value = ws.cell(row=row_idx, column=col_idx).value
-                row_data[col["key"]] = str(cell_value).strip() if cell_value else ""
-
-            q_type = row_data["type"]
-            content = row_data["content"]
-
-            if not content:
+                row_data[col["key"]] = str(cell_value).strip() if cell_value is not None else ""
+            if not any(row_data.values()):
                 continue
 
-            if q_type not in QUESTION_TYPES:
-                errors.append(f"第{row_idx}行：题型 '{q_type}' 无效，应为 single/multi/judge/fill/short")
-                continue
-
+            q_type = row_data["type"] or "single"
             options = {}
-            if q_type in ["single", "multi"]:
-                for opt_key in ["option_a", "option_b", "option_c", "option_d", "option_e", "option_f"]:
-                    opt_value = row_data[opt_key]
-                    if opt_value:
-                        options[opt_key.replace("option_", "").upper()] = opt_value
+            if q_type in {"single", "multi"}:
+                for opt_key in ("option_a", "option_b", "option_c", "option_d", "option_e", "option_f"):
+                    if row_data[opt_key]:
+                        options[opt_key.replace("option_", "").upper()] = row_data[opt_key]
 
-            elif q_type == "judge":
-                options = {"T": "正确", "F": "错误"}
-
-            answer = row_data["answer"]
-            explanation = row_data["explanation"]
-            chapter_name = row_data.get("chapter", "").strip()
-
-            if not answer and q_type not in ["short", "fill"]:
-                errors.append(f"第{row_idx}行：答案不能为空")
-                continue
-
-            questions.append({
+            question = {
                 "type": q_type,
-                "content": content,
+                "content": row_data["content"],
                 "options": options,
-                "answer": answer,
-                "explanation": explanation,
-                "chapter_name": chapter_name,
-            })
+                "answer": row_data["answer"],
+                "explanation": row_data["explanation"],
+                "chapter_name": row_data["chapter"],
+            }
+            if q_type not in QUESTION_TYPES:
+                question["_error"] = f"题型 '{q_type}' 无效"
+            questions.append(question)
         except Exception as e:
             errors.append(f"第{row_idx}行：解析错误 - {str(e)}")
 
@@ -208,51 +191,31 @@ def parse_csv_to_questions(file_bytes: bytes, encoding: str = "utf-8-sig") -> li
 
     for row in reader:
         try:
-            q_type = row.get("题型", "").strip() or row.get("type", "").strip()
+            if not any(str(value or "").strip() for value in row.values()):
+                row_idx += 1
+                continue
+            q_type = row.get("题型", "").strip() or row.get("type", "").strip() or "single"
             content = row.get("题干", "").strip() or row.get("content", "").strip()
-
-            if not content:
-                row_idx += 1
-                continue
-
-            if q_type not in QUESTION_TYPES and q_type:
-                errors.append(f"第{row_idx}行：题型 '{q_type}' 无效")
-                row_idx += 1
-                continue
-
-            if not q_type:
-                q_type = "single"
-
             options = {}
-            if q_type in ["single", "multi"]:
-                for key in ["A", "B", "C", "D", "E", "F"]:
-                    opt_value = row.get(f"选项{key}", "").strip() or row.get(f"option_{key.lower()}", "").strip() or row.get(f"option{key.lower()}", "").strip()
-                    if opt_value:
-                        options[key] = opt_value
+            if q_type in {"single", "multi"}:
+                for key in ("A", "B", "C", "D", "E", "F"):
+                    value = row.get(f"选项{key}", "").strip() or row.get(f"option_{key.lower()}", "").strip() or row.get(f"option{key.lower()}", "").strip()
+                    if value:
+                        options[key] = value
 
-            elif q_type == "judge":
-                options = {"T": "正确", "F": "错误"}
-
-            answer = row.get("答案", "").strip() or row.get("answer", "").strip()
-            explanation = row.get("解析", "").strip() or row.get("explanation", "").strip()
-            chapter_name = row.get("章节", "").strip() or row.get("chapter", "").strip() or row.get("chapter_name", "").strip()
-
-            if not answer and q_type not in ["short", "fill"]:
-                errors.append(f"第{row_idx}行：答案不能为空")
-                row_idx += 1
-                continue
-
-            questions.append({
+            question = {
                 "type": q_type,
                 "content": content,
                 "options": options,
-                "answer": answer,
-                "explanation": explanation,
-                "chapter_name": chapter_name,
-            })
+                "answer": row.get("答案", "").strip() or row.get("answer", "").strip(),
+                "explanation": row.get("解析", "").strip() or row.get("explanation", "").strip(),
+                "chapter_name": row.get("章节", "").strip() or row.get("chapter", "").strip() or row.get("chapter_name", "").strip(),
+            }
+            if q_type not in QUESTION_TYPES:
+                question["_error"] = f"题型 '{q_type}' 无效"
+            questions.append(question)
         except Exception as e:
             errors.append(f"第{row_idx}行：解析错误 - {str(e)}")
-
         row_idx += 1
 
     return questions, errors
@@ -266,54 +229,30 @@ def parse_json_to_questions(file_bytes: bytes) -> list:
     except json.JSONDecodeError as e:
         return [], [f"JSON解析错误: {str(e)}"]
 
-    questions = []
-    errors = []
-
     if isinstance(data, dict):
         data = data.get("questions", data.get("data", []))
-
     if not isinstance(data, list):
         return [], ["JSON格式错误：根节点应为数组或包含questions字段的对象"]
 
+    questions = []
+    errors = []
     for idx, item in enumerate(data, 1):
         try:
-            q_type = item.get("type", "single")
-            content = item.get("content", "").strip()
-
-            if not content:
-                errors.append(f"第{idx}条：题干不能为空")
+            if not isinstance(item, dict):
+                questions.append(item)
                 continue
-
-            if q_type not in QUESTION_TYPES:
-                errors.append(f"第{idx}条：题型 '{q_type}' 无效")
-                continue
-
-            options = item.get("options", {})
-            if isinstance(options, dict):
-                normalized_options = {}
-                for key, value in options.items():
-                    normalized_options[str(key).upper()] = str(value).strip()
-                options = normalized_options
-
-            elif q_type == "judge" and not options:
-                options = {"T": "正确", "F": "错误"}
-
-            answer = str(item.get("answer", "")).strip()
-            explanation = str(item.get("explanation", "")).strip()
-            chapter_name = str(item.get("chapter_name", "") or item.get("chapter", "")).strip()
-
-            if not answer and q_type not in ["short", "fill"]:
-                errors.append(f"第{idx}条：答案不能为空")
-                continue
-
-            questions.append({
+            q_type = str(item.get("type") or "single")
+            question = {
                 "type": q_type,
-                "content": content,
-                "options": options,
-                "answer": answer,
-                "explanation": explanation,
-                "chapter_name": chapter_name,
-            })
+                "content": str(item.get("content") or "").strip(),
+                "options": item.get("options") if isinstance(item.get("options"), dict) else {},
+                "answer": str(item.get("answer") or "").strip(),
+                "explanation": str(item.get("explanation") or "").strip(),
+                "chapter_name": str(item.get("chapter_name") or item.get("chapter") or "").strip(),
+            }
+            if q_type not in QUESTION_TYPES:
+                question["_error"] = f"题型 '{q_type}' 无效"
+            questions.append(question)
         except Exception as e:
             errors.append(f"第{idx}条：解析错误 - {str(e)}")
 

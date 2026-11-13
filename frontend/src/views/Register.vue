@@ -93,7 +93,7 @@
 <script setup>
 import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+
 import { Lock, User } from '@element-plus/icons-vue'
 import { register } from '../api'
 import { clearLegacySharedAuth, saveAuthSession } from '../utils/authStorage'

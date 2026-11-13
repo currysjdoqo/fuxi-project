@@ -4,6 +4,7 @@ import re
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from auth import get_current_user
@@ -11,6 +12,16 @@ from database import get_db
 from models import Chapter, PracticeRecord, Question, Subject, User, WrongQuestion
 from routers.settings import get_wrong_question_threshold
 from schemas import QuestionOut
+from utils.answer_normalizer import (
+    is_answer_correct,
+    normalize_answer,
+    normalize_judge_answer,
+    normalize_multi_answer,
+    normalize_question_type,
+    normalize_standard_answer,
+)
+from utils.helpers import get_user_question
+from utils.wrong_question_service import update_wrong_question_state
 
 router = APIRouter()
 
@@ -71,48 +82,6 @@ class BatchSubmitRequest(BaseModel):
     submissions: List[SubmitRequest]
 
 
-def normalize_answer(answer: str) -> str:
-    return "".join(answer.strip().upper().split())
-
-
-def normalize_multi_answer(answer: str) -> str:
-    letters = re.findall(r"[A-Z]", answer.upper())
-    if not letters:
-        return normalize_answer(answer)
-    return "".join(sorted(set(letters)))
-
-
-def normalize_judge_answer(answer: str) -> str:
-    compact = "".join(answer.strip().upper().split())
-    if compact in {"对", "正确", "TRUE", "T", "YES", "Y", "A", "√", "✅", "✔"}:
-        return "T"
-    if compact in {"错", "错误", "FALSE", "F", "NO", "N", "B", "×", "❌", "✘", "X"}:
-        return "F"
-    return compact
-
-
-def normalize_standard_answer(question_type: str, answer: str) -> str:
-    raw = answer.strip()
-    if question_type == "multi":
-        return normalize_multi_answer(raw)
-    if question_type == "single":
-        match = re.search(r"[A-Z]", raw.upper())
-        return match.group(0) if match else normalize_answer(raw)
-    if question_type == "judge":
-        return normalize_judge_answer(raw)
-    return raw
-
-
-def is_answer_correct(question_type: str, user_answer: str, correct_answer: str) -> bool:
-    if question_type == "multi":
-        return normalize_multi_answer(user_answer) == normalize_multi_answer(correct_answer)
-    return normalize_answer(user_answer) == normalize_answer(correct_answer)
-
-
-def normalize_question_type(question_type: str) -> str:
-    return question_type if question_type in {"single", "multi", "judge", "fill", "short", "code"} else "single"
-
-
 def normalize_question_options(question_type: str, options: dict[str, str]) -> dict[str, str]:
     if question_type in {"single", "multi"}:
         normalized: dict[str, str] = {}
@@ -135,9 +104,6 @@ def normalize_question_options(question_type: str, options: dict[str, str]) -> d
 
     return options
 
-
-def get_user_question(db: Session, user_id: int, question_id: int) -> Question | None:
-    return db.query(Question).filter(Question.id == question_id, Question.user_id == user_id, Question.deleted_at.is_(None)).first()
 
 
 @router.get("/questions", response_model=List[QuestionOut])
@@ -187,20 +153,33 @@ def get_questions_summary(
         query = query.filter(Question.is_important == 1)
 
     total = query.count()
-    questions = query.order_by(Question.id.asc()).all()
+    # 只取摘要需要的列，并用 SQLite 的 substr 截断正文，避免把 options / answer /
+    # explanation 等大字段整列读回内存
+    rows = (
+        query.with_entities(
+            Question.id,
+            func.substr(Question.content, 1, 51).label("content_preview"),
+            Question.type,
+            Question.is_important,
+            Question.subject_id,
+            Question.chapter_id,
+        )
+        .order_by(Question.id.asc())
+        .all()
+    )
 
     return {
         "total": total,
         "questions": [
             {
-                "id": q.id,
-                "content": q.content[:50] + "..." if len(q.content) > 50 else q.content,
-                "type": q.type,
-                "is_important": q.is_important,
-                "subject_id": q.subject_id,
-                "chapter_id": q.chapter_id
+                "id": row.id,
+                "content": row.content_preview[:50] + "..." if len(row.content_preview or "") > 50 else (row.content_preview or ""),
+                "type": row.type,
+                "is_important": row.is_important,
+                "subject_id": row.subject_id,
+                "chapter_id": row.chapter_id
             }
-            for q in questions
+            for row in rows
         ]
     }
 
@@ -322,9 +301,14 @@ def batch_delete_questions(request: BatchDeleteRequest, db: Session = Depends(ge
     if not questions:
         raise HTTPException(status_code=404, detail="题目不存在")
 
+    now = datetime.utcnow()
     for question in questions:
-        question.deleted_at = datetime.utcnow()
-        db.query(WrongQuestion).filter(WrongQuestion.question_id == question.id, WrongQuestion.user_id == current_user.id).delete()
+        question.deleted_at = now
+    # 一条语句删掉这批题目的错题记录，避免逐题 delete
+    db.query(WrongQuestion).filter(
+        WrongQuestion.user_id == current_user.id,
+        WrongQuestion.question_id.in_([question.id for question in questions]),
+    ).delete(synchronize_session=False)
     db.commit()
     return {"message": "题目已批量移入垃圾箱", "count": len(questions)}
 
@@ -356,26 +340,9 @@ def submit_practice(request: SubmitRequest, db: Session = Depends(get_db), curre
     db.add(practice_record)
 
     threshold = get_wrong_question_threshold()
-    removed_from_wrong = False
-    remaining_to_remove = 0
-
-    wrong_question = db.query(WrongQuestion).filter(WrongQuestion.question_id == request.question_id, WrongQuestion.user_id == current_user.id).first()
-    if not is_correct:
-        if wrong_question:
-            wrong_question.review_count = wrong_question.review_count + 1
-            wrong_question.correct_count = 0
-            wrong_question.last_reviewed_at = datetime.utcnow()
-        else:
-            db.add(WrongQuestion(user_id=current_user.id, question_id=request.question_id, correct_count=0))
-    else:
-        if wrong_question:
-            wrong_question.correct_count = (wrong_question.correct_count or 0) + 1
-            wrong_question.last_reviewed_at = datetime.utcnow()
-            if wrong_question.correct_count >= threshold:
-                db.delete(wrong_question)
-                removed_from_wrong = True
-            else:
-                remaining_to_remove = threshold - wrong_question.correct_count
+    removed_from_wrong, remaining_to_remove = update_wrong_question_state(
+        db, current_user.id, request.question_id, is_correct, threshold,
+    )
 
     db.commit()
     return {
@@ -403,12 +370,13 @@ def batch_submit_practice(request: BatchSubmitRequest, db: Session = Depends(get
         Question.deleted_at.is_(None)
     ).all()
     question_map = {q.id: q for q in questions}
-    
-    wrong_questions = db.query(WrongQuestion).filter(
-        WrongQuestion.question_id.in_(unique_question_ids),
-        WrongQuestion.user_id == current_user.id
-    ).all()
-    wrong_question_map = {wq.question_id: wq for wq in wrong_questions}
+    wrong_map = {
+        wrong.question_id: wrong
+        for wrong in db.query(WrongQuestion).filter(
+            WrongQuestion.user_id == current_user.id,
+            WrongQuestion.question_id.in_(unique_question_ids),
+        ).all()
+    } if unique_question_ids else {}
     
     for submission in request.submissions:
         question = question_map.get(submission.question_id)
@@ -441,29 +409,14 @@ def batch_submit_practice(request: BatchSubmitRequest, db: Session = Depends(get
         )
         db.add(practice_record)
         
-        removed_from_wrong = False
-        remaining_to_remove = 0
-        
-        wrong_question = wrong_question_map.get(submission.question_id)
-        if not is_correct:
-            if wrong_question:
-                wrong_question.review_count = wrong_question.review_count + 1
-                wrong_question.correct_count = 0
-                wrong_question.last_reviewed_at = datetime.utcnow()
-            else:
-                new_wrong = WrongQuestion(user_id=current_user.id, question_id=submission.question_id, correct_count=0)
-                db.add(new_wrong)
-                wrong_question_map[submission.question_id] = new_wrong
-        else:
-            if wrong_question:
-                wrong_question.correct_count = (wrong_question.correct_count or 0) + 1
-                wrong_question.last_reviewed_at = datetime.utcnow()
-                if wrong_question.correct_count >= threshold:
-                    db.delete(wrong_question)
-                    del wrong_question_map[submission.question_id]
-                    removed_from_wrong = True
-                else:
-                    remaining_to_remove = threshold - wrong_question.correct_count
+        removed_from_wrong, remaining_to_remove = update_wrong_question_state(
+            db,
+            current_user.id,
+            submission.question_id,
+            is_correct,
+            threshold,
+            wrong_question=wrong_map.get(submission.question_id),
+        )
         
         results.append({
             "question_id": submission.question_id,

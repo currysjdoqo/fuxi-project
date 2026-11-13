@@ -31,36 +31,76 @@
         <main v-if="!selectedSubject" class="subject-page">
           <section class="create-subject">
             <el-input v-model="newSubjectName" placeholder="例如：机器学习" @keyup.enter="handleCreateSubject" />
+            <el-select v-model="newSubjectFolderId" placeholder="归入文件夹（选填）" clearable style="width: 180px">
+              <el-option
+                v-for="g in folderGroups.filter(f => f.id !== -1)"
+                :key="g.id"
+                :label="g.name"
+                :value="g.id"
+              />
+            </el-select>
             <el-button type="primary" :icon="Plus" :loading="subjectCreating" @click="handleCreateSubject">创建科目</el-button>
+            <el-divider direction="vertical" />
+            <el-input v-model="newFolderName" placeholder="新建文件夹，如：大二上" style="width: 200px" @keyup.enter="handleCreateFolder" />
+            <el-button :icon="Plus" :loading="folderCreating" @click="handleCreateFolder">建文件夹</el-button>
           </section>
 
-          <section class="subject-grid">
-            <div
-              v-for="subject in subjects"
+          <template v-if="folderGroups.length">
+            <template v-for="group in folderGroups" :key="group.id">
+              <div class="folder-section">
+                <div class="folder-header">
+                  <h3>{{ group.name }}</h3>
+                  <el-tag size="small" type="info">{{ group.subject_count }} 科目 · {{ group.question_count }} 题</el-tag>
+                  <el-button v-if="group.id !== -1" link type="danger" size="small" @click="handleDeleteFolder(group)">删除文件夹</el-button>
+                </div>
+                <section v-if="group.subjects?.length" class="subject-grid">
+                  <div
+                    v-for="subject in group.subjects"
               :key="subject.id"
               class="subject-card"
               role="button"
-              tabindex="0"
+                    tabindex="0"
               @click="enterSubject(subject)"
-              @keyup.enter="enterSubject(subject)"
-              @keyup.space="enterSubject(subject)"
-            >
+                  >
               <div class="subject-card-head">
                 <strong>{{ subject.name }}</strong>
-                <el-button
+                      <div class="subject-card-actions" @click.stop>
+                        <el-dropdown trigger="click" @command="(folderId) => handleMoveSubject(subject, folderId)">
+                          <el-button circle size="small" :icon="Folder" title="移动到文件夹" @click.stop />
+                          <template #dropdown>
+                            <el-dropdown-menu>
+                              <el-dropdown-item
+                                v-for="f in folderGroups.filter(g => g.id !== -1 && g.id !== subject.folder_id)"
+                                :key="f.id"
+                                :command="f.id"
+                              >移入「{{ f.name }}」</el-dropdown-item>
+                              <el-dropdown-item
+                                v-if="subject.folder_id !== null"
+                                :command="null"
+                                divided
+                              >移出文件夹（归为未分类）</el-dropdown-item>
+                            </el-dropdown-menu>
+                          </template>
+                        </el-dropdown>
+                        <el-button
                   v-if="subject.name !== '未分类'"
-                  circle
-                  size="small"
-                  type="danger"
-                  :icon="Delete"
+                          circle
+                          size="small"
+                          type="danger"
+                          :icon="Delete"
                   :loading="subjectDeletingId === subject.id"
                   @click.stop="handleDeleteSubject(subject)"
-                />
+                        />
+                      </div>
+                    </div>
+                    <span>{{ subject.question_count }} 道题</span>
+                  </div>
+                </section>
+                <el-empty v-else description="此文件夹暂无科目" :image-size="60" />
               </div>
-              <span>{{ subject.question_count }} 道题</span>
-            </div>
-            <el-empty v-if="!subjects.length" description="暂无科目，请先创建一个科目" />
-          </section>
+            </template>
+          </template>
+          <el-empty v-else description="暂无科目，请先创建文件夹和科目" />
         </main>
 
         <template v-else>
@@ -460,7 +500,6 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   ArrowLeft,
   ArrowRight,
@@ -482,7 +521,8 @@ import {
   Setting,
   Star,
   StarFilled,
-  User
+  User,
+  Folder
 } from '@element-plus/icons-vue'
 import ExportDialog from '../components/ExportDialog.vue'
 import ProfileModal from '../components/ProfileModal.vue'
@@ -493,7 +533,6 @@ import {
   batchDeleteQuestions,
   batchSubmitAnswers,
   createChapter,
-  createSubject,
   deleteChapter,
   deleteSubject as apiDeleteSubject,
   deleteQuestion as apiDeleteQuestion,
@@ -504,6 +543,12 @@ import {
   getQuestions,
   getQuestionsSummary,
   getSubjects,
+  getFoldersWithSubjects,
+  createFolder,
+  deleteFolder,
+  createSubject,
+  addSubjectToFolder,
+  removeSubjectFromFolder,
   moveQuestionsToChapter,
   submitAnswer as apiSubmitAnswer,
   updateQuestionExplanation,
@@ -521,9 +566,12 @@ const { username, avatar, loadUserInfo } = useUser()
 const showProfileModal = ref(false)
 
 const subjects = ref([])
+const folderGroups = ref([])  // [{id, name, subjects: [...]}]
+const newFolderName = ref('')
+const newSubjectFolderId = ref(null)
+const subjectCreating = ref(false)
 const selectedSubject = ref(null)
 const newSubjectName = ref('')
-const subjectCreating = ref(false)
 const subjectDeletingId = ref(null)
 const chapters = ref([])
 const selectedChapterId = ref('all')
@@ -887,9 +935,48 @@ const downloadAttachment = () => {
 
 const loadSubjects = async () => {
   try {
-    subjects.value = await getSubjects()
+    folderGroups.value = await getFoldersWithSubjects()
+    // 拍平所有分组的科目，subjects 列表供旧代码使用
+    subjects.value = folderGroups.value.flatMap(g => g.subjects || [])
   } catch (error) {
     ElMessage.error(`加载科目失败：${error.response?.data?.detail || error.message}`)
+  }
+}
+
+const folderCreating = ref(false)
+
+const handleCreateFolder = async () => {
+  if (!newFolderName.value.trim()) {
+    ElMessage.warning('请输入文件夹名称')
+    return
+  }
+  folderCreating.value = true
+  try {
+    await createFolder(newFolderName.value.trim())
+    newFolderName.value = ''
+    await loadSubjects()
+  } catch (error) {
+    ElMessage.error(`创建文件夹失败：${error.response?.data?.detail || error.message}`)
+  } finally {
+    folderCreating.value = false
+  }
+}
+
+const handleDeleteFolder = async (group) => {
+  if (group.subject_count > 0) {
+    ElMessage.warning(`该文件夹下还有 ${group.subject_count} 个科目，请先移出或删除`)
+    return
+  }
+  try {
+    await ElMessageBox.confirm(`确定删除文件夹"${group.name}"吗？里面的科目会自动移到"未分类科目"`, '删除确认', { type: 'warning' })
+  } catch {
+    return
+  }
+  try {
+    await deleteFolder(group.id)
+    await loadSubjects()
+  } catch (error) {
+    ElMessage.error(`删除文件夹失败：${error.response?.data?.detail || error.message}`)
   }
 }
 
@@ -900,8 +987,9 @@ const handleCreateSubject = async () => {
   }
   subjectCreating.value = true
   try {
-    const subject = await createSubject(newSubjectName.value.trim())
+    const subject = await createSubject(newSubjectName.value.trim(), newSubjectFolderId.value)
     newSubjectName.value = ''
+    newSubjectFolderId.value = null
     await loadSubjects()
     enterSubject(subject)
   } catch (error) {
@@ -1006,6 +1094,25 @@ const enterSubject = async (subject) => {
   router.replace({ path: '/', query: { subject_id: subject.id } })
   await loadChapters()
   await loadQuestions()
+}
+
+const handleMoveSubject = async (subject, folderId) => {
+  try {
+    if (folderId === null) {
+      // 移出文件夹（归为未分类）
+      await removeSubjectFromFolder(subject.folder_id, subject.id)
+      subject.folder_id = null
+      ElMessage.success(`「${subject.name}」已移出文件夹`)
+    } else {
+      await addSubjectToFolder(folderId, subject.id)
+      const folder = folderGroups.value.find(f => f.id === folderId)
+      subject.folder_id = folderId
+      ElMessage.success(`「${subject.name}」已移入「${folder?.name || ''}」`)
+    }
+    await loadSubjects()
+  } catch (error) {
+    ElMessage.error(`移动失败：${error.response?.data?.detail || error.message}`)
+  }
 }
 
 const handleDeleteSubject = async (subject) => {
@@ -1377,7 +1484,6 @@ const deleteCurrentQuestion = async () => {
     // 移除题目
     questions.value.splice(removedIndex, 1)
     
-    // 从待提交队列中移除
     pendingSubmissions.value = pendingSubmissions.value.filter(s => s.question_id !== removedId)
     
     // 调整答案记录索引
@@ -1471,7 +1577,6 @@ const resetPractice = () => {
   applyPracticeQuestions()
 }
 
-// 打开导出对话框
 const openExportDialog = () => {
   exportDialogVisible.value = true
 }
@@ -1564,7 +1669,6 @@ const saveOptions = async () => {
     return
   }
 
-  // 检查是否有空的键或值
   if (keys.some(k => !k) || values.some(v => !v)) {
     ElMessage.error('选项字母和内容都不能为空')
     return
@@ -1712,6 +1816,30 @@ onUnmounted(() => {
   gap: 14px;
 }
 
+.folder-section {
+  margin-bottom: 28px;
+  padding: 18px 20px;
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 6px 16px rgba(60, 40, 20, 0.06);
+}
+
+.folder-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 12px;
+  margin-bottom: 14px;
+  border-bottom: 1px dashed #e8d9c6;
+}
+
+.folder-header h3 {
+  font-size: 16px;
+  font-weight: 600;
+  color: #3d2f24;
+  margin: 0;
+}
+
 .subject-card {
   min-height: 120px;
   display: grid;
@@ -1746,6 +1874,17 @@ onUnmounted(() => {
   justify-content: space-between;
   align-items: center;
   gap: 12px;
+}
+
+.subject-card-actions {
+  display: flex;
+  gap: 6px;
+  opacity: 0.6;
+  transition: opacity 0.15s;
+}
+
+.subject-card:hover .subject-card-actions {
+  opacity: 1;
 }
 
 .subject-card:hover {

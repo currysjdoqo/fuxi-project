@@ -1,4 +1,3 @@
-from datetime import datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -11,6 +10,8 @@ from database import get_db
 from models import PracticeRecord, Question, Subject, User, WrongQuestion
 from routers.settings import get_wrong_question_threshold
 from utils.answer_normalizer import is_answer_correct
+from utils.helpers import get_user_question
+from utils.wrong_question_service import update_wrong_question_state
 
 router = APIRouter()
 
@@ -52,17 +53,6 @@ class SubmitResponse(BaseModel):
     remaining_to_remove: int = 0
 
 
-def get_user_question(db: Session, user_id: int, question_id: int) -> Question | None:
-    return (
-        db.query(Question)
-        .filter(
-            Question.id == question_id,
-            Question.user_id == user_id,
-            Question.deleted_at.is_(None),
-        )
-        .first()
-    )
-
 
 @router.post("/review/generate", response_model=List[ReviewQuestionOut])
 def generate_review_questions(
@@ -88,7 +78,7 @@ def generate_review_questions(
             .first()
         )
         if not subject:
-            raise HTTPException(status_code=404, detail="绉戠洰涓嶅瓨鍦?")
+            raise HTTPException(status_code=404, detail="科目不存在")
         query = query.filter(Question.subject_id == request.subject_id)
 
     rows = query.order_by(func.random()).limit(request.count).all()
@@ -113,7 +103,7 @@ def submit_review_answer(
 ):
     question = get_user_question(db, current_user.id, request.question_id)
     if not question:
-        raise HTTPException(status_code=404, detail="棰樼洰涓嶅瓨鍦?")
+        raise HTTPException(status_code=404, detail="题目不存在")
 
     is_correct = is_answer_correct(question.type, request.user_answer, question.answer)
     db.add(
@@ -126,31 +116,9 @@ def submit_review_answer(
     )
 
     threshold = get_wrong_question_threshold()
-    removed_from_wrong = False
-    remaining_to_remove = 0
-    wrong_question = (
-        db.query(WrongQuestion)
-        .filter(
-            WrongQuestion.question_id == request.question_id,
-            WrongQuestion.user_id == current_user.id,
-        )
-        .first()
+    removed_from_wrong, remaining_to_remove = update_wrong_question_state(
+        db, current_user.id, request.question_id, is_correct, threshold,
     )
-
-    if is_correct:
-        if wrong_question:
-            wrong_question.correct_count = (wrong_question.correct_count or 0) + 1
-            wrong_question.last_reviewed_at = datetime.utcnow()
-            if wrong_question.correct_count >= threshold:
-                db.delete(wrong_question)
-                removed_from_wrong = True
-            else:
-                remaining_to_remove = threshold - wrong_question.correct_count
-    else:
-        if wrong_question:
-            wrong_question.review_count = wrong_question.review_count + 1
-            wrong_question.correct_count = 0
-            wrong_question.last_reviewed_at = datetime.utcnow()
 
     db.commit()
     return {
@@ -171,13 +139,38 @@ def batch_submit_review(
     threshold = get_wrong_question_threshold()
     results = []
 
+    # 批量预取题目与已有错题记录，避免每条作答两三次单独查询
+    question_ids = [submission.question_id for submission in request.submissions]
+    questions_by_id = {}
+    wrong_by_question = {}
+    if question_ids:
+        questions_by_id = {
+            question.id: question
+            for question in db.query(Question)
+            .filter(
+                Question.id.in_(question_ids),
+                Question.user_id == current_user.id,
+                Question.deleted_at.is_(None),
+            )
+            .all()
+        }
+        wrong_by_question = {
+            wrong.question_id: wrong
+            for wrong in db.query(WrongQuestion)
+            .filter(
+                WrongQuestion.user_id == current_user.id,
+                WrongQuestion.question_id.in_(question_ids),
+            )
+            .all()
+        }
+
     for submission in request.submissions:
-        question = get_user_question(db, current_user.id, submission.question_id)
+        question = questions_by_id.get(submission.question_id)
         if not question:
             results.append(
                 {
                     "question_id": submission.question_id,
-                    "error": "棰樼洰涓嶅瓨鍦?",
+                    "error": "题目不存在",
                 }
             )
             continue
@@ -193,31 +186,14 @@ def batch_submit_review(
             )
         )
 
-        removed_from_wrong = False
-        remaining_to_remove = 0
-        wrong_question = (
-            db.query(WrongQuestion)
-            .filter(
-                WrongQuestion.question_id == submission.question_id,
-                WrongQuestion.user_id == current_user.id,
-            )
-            .first()
+        removed_from_wrong, remaining_to_remove = update_wrong_question_state(
+            db,
+            current_user.id,
+            submission.question_id,
+            is_correct,
+            threshold,
+            wrong_question=wrong_by_question.get(submission.question_id),
         )
-
-        if is_correct:
-            if wrong_question:
-                wrong_question.correct_count = (wrong_question.correct_count or 0) + 1
-                wrong_question.last_reviewed_at = datetime.utcnow()
-                if wrong_question.correct_count >= threshold:
-                    db.delete(wrong_question)
-                    removed_from_wrong = True
-                else:
-                    remaining_to_remove = threshold - wrong_question.correct_count
-        else:
-            if wrong_question:
-                wrong_question.review_count = wrong_question.review_count + 1
-                wrong_question.correct_count = 0
-                wrong_question.last_reviewed_at = datetime.utcnow()
 
         results.append(
             {
