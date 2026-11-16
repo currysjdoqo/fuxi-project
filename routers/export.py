@@ -1,14 +1,17 @@
+import unicodedata
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Literal, Optional
+from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from auth import get_current_user
 from database import get_db
-from models import Question, Subject, User
+from models import Chapter, Question, Subject, User
+from utils.chapter_exporter import export_chapters as build_chapter_export
 from utils.exporter import export_to_pdf, export_to_word, get_supported_types
 
 router = APIRouter(prefix="/export", tags=["导出"])
@@ -148,6 +151,88 @@ def export_questions(
         media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
     return FileResponse(filepath, media_type=media_type, filename=Path(filepath).name)
+
+
+class ChapterExportRequest(BaseModel):
+    chapter_ids: List[int]
+    format: Literal["pdf", "docx", "md"]
+    filename: Optional[str] = None
+
+
+def _clean_filename_stem(value):
+    cleaned = "".join(
+        char for char in (value or "")
+        if char not in "/\\" and unicodedata.category(char) != "Cc"
+    ).strip()
+    while cleaned.lower().endswith((".pdf", ".docx", ".md")):
+        cleaned = cleaned.rsplit(".", 1)[0].strip()
+    return cleaned.strip(" .")[:100].rstrip(" .")
+
+
+def _chapter_content_disposition(filename):
+    stem = Path(filename).stem
+    ascii_stem = unicodedata.normalize("NFKD", stem).encode("ascii", "ignore").decode()
+    ascii_stem = "".join(
+        char if char.isalnum() or char in ("-", "_") else "-"
+        for char in ascii_stem
+    ).strip("-._")
+    fallback = f"{ascii_stem or 'chapter-review'}{Path(filename).suffix}"
+    return f"attachment; filename=\"{fallback}\"; filename*=UTF-8''{quote(filename, safe='')}"
+
+
+@router.post("/chapters")
+def export_chapter_review(
+    request: ChapterExportRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if not request.chapter_ids:
+        raise HTTPException(status_code=400, detail="请至少选择一个章节")
+    if len(set(request.chapter_ids)) != len(request.chapter_ids):
+        raise HTTPException(status_code=400, detail="章节 ID 不能重复")
+
+    rows = db.query(Chapter).filter(
+        Chapter.id.in_(request.chapter_ids),
+        Chapter.user_id == current_user.id,
+    ).all()
+    chapters_by_id = {chapter.id: chapter for chapter in rows}
+    if len(chapters_by_id) != len(request.chapter_ids):
+        raise HTTPException(status_code=404, detail="章节不存在或无权访问")
+    chapters = [chapters_by_id[chapter_id] for chapter_id in request.chapter_ids]
+
+    subject_ids = {chapter.subject_id for chapter in chapters}
+    if len(subject_ids) != 1:
+        raise HTTPException(status_code=400, detail="不能跨科目导出章节")
+    subject = db.query(Subject).filter(
+        Subject.id == chapters[0].subject_id,
+        Subject.user_id == current_user.id,
+    ).first()
+    if not subject:
+        raise HTTPException(status_code=404, detail="科目不存在或无权访问")
+
+    default_name = chapters[0].name if len(chapters) == 1 else f"{subject.name}-章节复习"
+    stem = _clean_filename_stem(request.filename) or _clean_filename_stem(default_name) or "章节复习"
+    extension = f".{request.format}"
+    filename = f"{stem}{extension}"
+    chapter_data = [
+        {
+            "name": chapter.name,
+            "summary_md": chapter.summary_md,
+            "outline_json": chapter.outline_json,
+        }
+        for chapter in chapters
+    ]
+    content = build_chapter_export(chapter_data, request.format)
+    media_types = {
+        "md": "text/markdown; charset=utf-8",
+        "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "pdf": "application/pdf",
+    }
+    return Response(
+        content=content,
+        media_type=media_types[request.format],
+        headers={"Content-Disposition": _chapter_content_disposition(filename)},
+    )
 
 
 @router.get("/formats")

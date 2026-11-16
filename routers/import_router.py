@@ -361,9 +361,11 @@ async def _parse_uploaded_smart(
     threshold = 1.0 if force_residuals else None
 
     if suffix in IMAGE_EXTENSIONS:
+        ocr_error: HTTPException | None = None
         try:
             ocr_text = await run_in_threadpool(extract_text_from_file, file.filename, file_bytes)
-        except HTTPException:
+        except HTTPException as exc:
+            ocr_error = exc
             ocr_text = ""
         if ocr_text.strip():
             result = await smart_parse_text(
@@ -384,6 +386,18 @@ async def _parse_uploaded_smart(
                     fallback_used=result.stats.ai_used,
                 )
         if not api_key:
+            if ocr_error is not None and ocr_error.status_code >= 500:
+                # 服务端环境问题（没装 Tesseract、缺 chi_sim 语言包）：原样透传，
+                # 否则用户会照着「配置 API Key」的提示去查一个毫不相关的地方。
+                raise HTTPException(
+                    status_code=ocr_error.status_code,
+                    detail=ocr_error.detail,
+                ) from ocr_error
+            if ocr_error is not None:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"{ocr_error.detail} 如需用 AI 识别兜底，请配置 DeepSeek API Key。",
+                ) from ocr_error
             raise HTTPException(
                 status_code=400,
                 detail="图片未识别出可用题目，请配置 DeepSeek API Key 后使用 AI 图片识别",

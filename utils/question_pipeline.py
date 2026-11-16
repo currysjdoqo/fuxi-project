@@ -11,6 +11,7 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from models import AiParseCache
 from utils.ai_import import complete_residuals_with_ai
@@ -390,7 +391,10 @@ async def smart_parse_file(
             stats=_empty_stats(),
             errors=[f"不支持的文件格式: {filename}"],
         )
-    parsed = parse_file_detailed(file_bytes, filename)
+    # 文件抽取（尤其是图片 OCR / 扫描版 PDF）是 CPU+子进程密集的同步调用，
+    # 必须挪到线程池，否则会阻塞事件循环：批量接口的 asyncio.Semaphore 形同虚设，
+    # 而且 OCR 期间其它接口（包括健康检查）全部排队。
+    parsed = await run_in_threadpool(parse_file_detailed, file_bytes, filename)
     return await _complete_parsed(
         parsed,
         api_key=api_key,

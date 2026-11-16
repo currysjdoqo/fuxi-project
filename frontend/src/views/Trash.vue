@@ -72,7 +72,7 @@ import { CircleClose, Delete, Menu, Refresh, Star } from '@element-plus/icons-vu
 import { useUser } from '../composables/useUser'
 import { clearAuthSession } from '../utils/authStorage'
 import {
-  getSubjects,
+  getFoldersWithSubjects,
   getTrashQuestions,
   permanentlyDeleteQuestion,
   permanentlyDeleteTrashQuestions,
@@ -130,8 +130,12 @@ const formatDate = (value) => {
 }
 
 const loadSubjects = async () => {
-  folderGroups.value = await getFoldersWithSubjects()
-  subjects.value = folderGroups.value.flatMap(g => g.subjects || [])
+  try {
+    folderGroups.value = await getFoldersWithSubjects()
+    subjects.value = folderGroups.value.flatMap(g => g.subjects || [])
+  } catch (error) {
+    ElMessage.error(`加载科目失败：${error.response?.data?.detail || error.message}`)
+  }
 }
 
 const loadTrash = async () => {

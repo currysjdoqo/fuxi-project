@@ -13,7 +13,7 @@
           v-model="selectedSubjectId"
           placeholder="选择科目"
           style="width: 240px"
-          @change="loadChapters"
+          @change="handleSubjectChange"
         >
           <el-option
             v-for="s in subjects"
@@ -22,6 +22,14 @@
             :value="s.id"
           />
         </el-select>
+        <el-button
+          type="primary"
+          plain
+          :disabled="selectedChapterIds.length === 0"
+          @click="openSelectedChapterExport"
+        >
+          导出所选（{{ selectedChapterIds.length }}）
+        </el-button>
       </div>
 
       <div v-if="selectedSubjectId" v-loading="loadingChapters" class="chapter-cards">
@@ -32,7 +40,14 @@
           @click="openChapter(ch)"
         >
           <div class="card-header">
-            <span class="card-name">{{ ch.name }}</span>
+            <div class="chapter-title">
+              <el-checkbox
+                :model-value="selectedChapterIds.includes(ch.id)"
+                @change="(val) => toggleChapterSelection(ch.id, val)"
+                @click.stop
+              />
+              <span class="card-name">{{ ch.name }}</span>
+            </div>
             <el-tag size="small" type="info">{{ ch.question_count }} 题</el-tag>
           </div>
           <div class="card-footer">
@@ -63,6 +78,10 @@
       <div class="detail-header">
         <el-button :icon="ArrowLeft" text @click="backToList">返回章节列表</el-button>
         <h3>{{ selectedChapter.name }}</h3>
+        <el-button type="primary" plain @click="openCurrentChapterExport">
+          <el-icon style="margin-right: 4px"><Download /></el-icon>
+          导出本章
+        </el-button>
         <el-button
           type="primary"
           :loading="extracting"
@@ -253,6 +272,12 @@
         </div>
       </div>
     </el-dialog>
+
+    <ChapterExportDialog
+      v-model:visible="showChapterExport"
+      :chapters="exportChapters"
+      :subject-name="selectedSubjectName"
+    />
     </div>
   </Layout>
 </template>
@@ -260,12 +285,13 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { ArrowLeft, CircleCheck, MagicStick } from '@element-plus/icons-vue'
+import { ArrowLeft, CircleCheck, Download, MagicStick } from '@element-plus/icons-vue'
 import Layout from '../components/Layout/Layout.vue'
+import ChapterExportDialog from '../components/ChapterExportDialog.vue'
 import { useUser } from '../composables/useUser'
 import { clearAuthSession } from '../utils/authStorage'
 import {
-  getSubjects,
+  getFoldersWithSubjects,
   getChapters,
   getChapterKnowledge,
   tagChapterQuestions,
@@ -293,6 +319,19 @@ const chapters = ref([])
 const selectedSubjectId = ref(null)
 const selectedChapter = ref(null)
 const loadingChapters = ref(false)
+const selectedChapterIds = ref([])
+const showChapterExport = ref(false)
+const exportChapters = ref([])
+
+const selectedSubjectName = computed(() => {
+  return subjects.value.find(subject => subject.id === selectedSubjectId.value)?.name || ''
+})
+
+const selectedChapters = computed(() => {
+  return selectedChapterIds.value
+    .map(id => chapters.value.find(chapter => chapter.id === id))
+    .filter(Boolean)
+})
 
 // 章节详情数据
 const knowledge = ref({ questions: [], summary_md: null, outline: null })
@@ -421,9 +460,15 @@ onMounted(async () => {
   }
 })
 
+const handleSubjectChange = () => {
+  selectedChapterIds.value = []
+  loadChapters()
+}
+
 const loadChapters = async () => {
   if (!selectedSubjectId.value) {
     chapters.value = []
+    selectedChapterIds.value = []
     return
   }
   loadingChapters.value = true
@@ -436,6 +481,7 @@ const loadChapters = async () => {
       ch.has_tags = false
     }
     chapters.value = data
+    selectedChapterIds.value = selectedChapterIds.value.filter(id => data.some(ch => ch.id === id))
     // 并行获取每章的提炼状态
     for (const ch of chapters.value) {
       try {
@@ -459,6 +505,30 @@ const loadChapters = async () => {
   } finally {
     loadingChapters.value = false
   }
+}
+
+const toggleChapterSelection = (id, checked) => {
+  if (checked) {
+    if (!selectedChapterIds.value.includes(id)) {
+      selectedChapterIds.value.push(id)
+    }
+  } else {
+    selectedChapterIds.value = selectedChapterIds.value.filter(chapterId => chapterId !== id)
+  }
+}
+
+const openChapterExport = (chapterList) => {
+  if (!chapterList.length) return
+  exportChapters.value = [...chapterList]
+  showChapterExport.value = true
+}
+
+const openSelectedChapterExport = () => {
+  openChapterExport(selectedChapters.value)
+}
+
+const openCurrentChapterExport = () => {
+  openChapterExport([selectedChapter.value])
 }
 
 const openChapter = async (ch) => {
@@ -611,6 +681,10 @@ const handleExtractAll = async () => {
 }
 
 .selector-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
   margin-bottom: 20px;
 }
 
@@ -639,6 +713,13 @@ const handleExtractAll = async () => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 12px;
+}
+
+.chapter-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
 }
 
 .card-name {

@@ -1,5 +1,6 @@
 import asyncio
 import json
+import time
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -204,3 +205,37 @@ def test_import_deduplicates_content_and_normalizes_chapter_spaces() -> None:
     assert session.query(Chapter).filter(Chapter.subject_id == subject.id).count() == 1
     session.close()
     engine.dispose()
+
+
+def test_smart_parse_file_offloads_blocking_extraction(monkeypatch) -> None:
+    """同步的文件抽取（OCR 可达数秒）必须在线程池里跑。
+
+    否则事件循环被堵死：批量接口的 asyncio.Semaphore 形同虚设，OCR 期间其它请求也全部排队。
+    """
+    def slow_parse(file_bytes: bytes, filename: str) -> dict:
+        time.sleep(0.2)
+        return {
+            "questions": [],
+            "residuals": [],
+            "stats": {"question_markers": 0, "parsed_count": 0, "residual_count": 0, "coverage": 0.0},
+            "errors": [],
+        }
+
+    monkeypatch.setattr(question_pipeline, "parse_file_detailed", slow_parse)
+
+    async def scenario() -> int:
+        ticks = 0
+
+        async def heartbeat() -> None:
+            nonlocal ticks
+            while True:
+                ticks += 1
+                await asyncio.sleep(0.01)
+
+        task = asyncio.create_task(heartbeat())
+        await smart_parse_file("scan.png", b"fake-image", ai_fallback=False)
+        task.cancel()
+        return ticks
+
+    # 阻塞式实现下 0.2s 内事件循环一次都不让出，ticks 停在 0~1。
+    assert asyncio.run(scenario()) >= 8

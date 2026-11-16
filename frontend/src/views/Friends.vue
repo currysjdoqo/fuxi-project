@@ -310,10 +310,10 @@ import {
   acceptFriendRequest,
   acceptShare,
   getFriends,
+  getFoldersWithSubjects,
   getMessages,
   getPendingRequests,
   getShareList,
-  getSubjects,
   rejectFriendRequest,
   rejectShare,
   removeFriend,
@@ -473,8 +473,12 @@ const loadShareData = async () => {
 }
 
 const loadSubjectsData = async () => {
-  folderGroups.value = await getFoldersWithSubjects()
-  subjects.value = folderGroups.value.flatMap(g => g.subjects || [])
+  try {
+    folderGroups.value = await getFoldersWithSubjects()
+    subjects.value = folderGroups.value.flatMap(g => g.subjects || [])
+  } catch (error) {
+    ElMessage.error(`加载科目失败：${error.response?.data?.detail || error.message}`)
+  }
 }
 
 const loadMessagesData = async (friendId, { silent = false } = {}) => {

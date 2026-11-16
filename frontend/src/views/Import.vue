@@ -271,7 +271,7 @@ import { Back, Delete, Document, Plus, Refresh, Setting, Star, Upload, UploadFil
 import { useUser } from '../composables/useUser'
 import { clearAuthSession } from '../utils/authStorage'
 import { ElMessageBox } from 'element-plus'
-import { aiAssignChapters, createChapter, createSubject, downloadImportTemplate, getChapters, getSubjects, importParsedQuestions, smartParseFile, smartParseText } from '../api'
+import { aiAssignChapters, createChapter, createSubject, downloadImportTemplate, getChapters, getFoldersWithSubjects, importParsedQuestions, smartParseFile, smartParseText } from '../api'
 import ProfileModal from '../components/ProfileModal.vue'
 import Layout from '../components/Layout/Layout.vue'
 

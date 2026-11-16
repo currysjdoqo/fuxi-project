@@ -1,4 +1,5 @@
 import json
+import re
 import sys
 from io import BytesIO
 from types import SimpleNamespace
@@ -198,20 +199,95 @@ def test_scanned_pdf_falls_back_to_embedded_image_ocr(monkeypatch) -> None:
     assert text.source == "ocr"
 
 
-def test_image_ocr_tries_three_psm_modes_and_selects_most_questions(monkeypatch) -> None:
+def _fake_ocr_setup(monkeypatch, responses):
+    """装一个按 psm 返回预设文本的假 pytesseract，并记录被调用过哪些 psm。"""
     image = Image.new("RGB", (80, 80), "white")
     output = BytesIO()
     image.save(output, format="PNG")
     calls = []
 
     def fake_ocr(_image, lang, config):
-        psm = int(config.rsplit(" ", 1)[-1])
+        psm = int(re.search(r"--psm (\d+)", config).group(1))
         calls.append(psm)
-        if psm == 4:
-            return "1. 第一题\n答案：甲\n2. 第二题\n答案：乙"
+        return responses.get(psm, "")
+
+    fake_module = SimpleNamespace(
+        image_to_string=fake_ocr,
+        pytesseract=SimpleNamespace(tesseract_cmd=""),
+    )
+    monkeypatch.setitem(sys.modules, "pytesseract", fake_module)
+    monkeypatch.setattr(file_extract, "_configure_tesseract_binary", lambda _module: None)
+    return output.getvalue(), calls
+
+
+def test_image_ocr_stops_after_first_sufficient_pass(monkeypatch) -> None:
+    """首趟就切出完整题且覆盖率达标时，不再跑剩下的 psm（每趟都是 2s+ 的子进程）。"""
+    payload, calls = _fake_ocr_setup(
+        monkeypatch,
+        {
+            6: "1. 第一题\n答案：甲",
+            4: "1. 第一题\n答案：甲\n2. 第二题\n答案：乙",
+            11: "无法形成题目",
+        },
+    )
+
+    text = file_extract._extract_from_image(payload)
+
+    assert calls == [6]
+    assert "第一题" in text
+
+
+def test_image_ocr_tries_next_psm_when_first_pass_is_insufficient(monkeypatch) -> None:
+    """首趟没拆出题时才换版面假设，且一旦够好就停。"""
+    payload, calls = _fake_ocr_setup(
+        monkeypatch,
+        {
+            6: "无法形成题目",
+            4: "1. 第一题\n答案：甲\n2. 第二题\n答案：乙",
+            11: "无法形成题目",
+        },
+    )
+
+    text = file_extract._extract_from_image(payload)
+
+    assert calls == [6, 4]
+    assert "第二题" in text
+
+
+def test_image_ocr_runs_all_psm_passes_when_fast_accept_disabled(monkeypatch) -> None:
+    """OCR_FAST_ACCEPT=0 时退回「三趟全跑、取最优」，用于追求最大召回的场景。"""
+    monkeypatch.setattr(file_extract, "_OCR_FAST_ACCEPT", False)
+    payload, calls = _fake_ocr_setup(
+        monkeypatch,
+        {
+            4: "1. 第一题\n答案：甲\n2. 第二题\n答案：乙",
+            6: "1. 只有一题\n答案：甲",
+            11: "无法形成题目",
+        },
+    )
+
+    text = file_extract._extract_from_image(payload)
+
+    assert calls == [6, 4, 11]
+    assert "第二题" in text
+    assert "只有一题" not in text
+
+
+def test_image_ocr_prefers_coverage_over_text_length(monkeypatch) -> None:
+    """题数相同时按覆盖率选，而不是按字符数选。"""
+    image = Image.new("RGB", (80, 80), "white")
+    output = BytesIO()
+    image.save(output, format="PNG")
+
+    def fake_ocr(_image, lang, config):
+        psm = int(re.search(r"--psm (\d+)", config).group(1))
         if psm == 6:
-            return "1. 只有一题\n答案：甲"
-        return "无法形成题目"
+            # 1 道完整题 + 1 个残块（第二题缺答案）→ coverage 0.5，但文本更长
+            return "1. 甲\n答案：A\n2. 乙"
+        if psm == 4:
+            # 1 道完整题，无残块 → coverage 1.0，文本更短
+            return "1. 甲\n答案：A"
+        return ""
 
     fake_module = SimpleNamespace(
         image_to_string=fake_ocr,
@@ -222,6 +298,63 @@ def test_image_ocr_tries_three_psm_modes_and_selects_most_questions(monkeypatch)
 
     text = file_extract._extract_from_image(output.getvalue())
 
-    assert calls == [6, 4, 11]
-    assert "第二题" in text
-    assert "只有一题" not in text
+    assert text == "1. 甲\n答案:A"
+
+
+def test_image_ocr_does_not_downscale_by_default(monkeypatch) -> None:
+    """默认不缩放：实测缩小会抹掉选项句点（选项 3→0）、3000px 时还会丢题。
+
+    这条测试是为了防止后人"优化"出缩小逻辑：省下的 0.2s 预处理不值这个准确率。
+    """
+    image = Image.new("RGB", (4000, 3000), "white")
+    output = BytesIO()
+    image.save(output, format="PNG")
+    seen = []
+
+    def fake_ocr(img, lang, config):
+        seen.append(img.size)
+        return "1. 第一题\n答案：甲"
+
+    fake_module = SimpleNamespace(
+        image_to_string=fake_ocr,
+        pytesseract=SimpleNamespace(tesseract_cmd=""),
+    )
+    monkeypatch.setitem(sys.modules, "pytesseract", fake_module)
+    monkeypatch.setattr(file_extract, "_configure_tesseract_binary", lambda _module: None)
+
+    file_extract._extract_from_image(output.getvalue())
+
+    assert seen == [(4000, 3000)]
+
+
+def test_clean_extracted_text_ocr_mode_fixes_common_ocr_errors() -> None:
+    raw = "１． 第一题\r\n\r\n\r\nl. 第二题\r\n答桉：A\r\n解忻：略"
+
+    cleaned = file_extract.clean_extracted_text(raw, ocr=True)
+
+    assert cleaned == "1. 第一题\n1. 第二题\n答案:A\n解析:略"
+
+
+def test_clean_extracted_text_keeps_non_ocr_behaviour_unchanged() -> None:
+    raw = "第一章 基础\r\n\r\n\r\n答桉：A\n\n\n\n正文"
+
+    cleaned = file_extract.clean_extracted_text(raw)
+
+    # 非 OCR 路径不做错字纠正、不转全角标点，只压空行
+    assert cleaned == "第一章 基础\n\n答桉：A\n\n正文"
+
+
+def test_image_text_goes_through_unified_cleaning(monkeypatch) -> None:
+    """图片分支不再绕过 clean_extracted_text（page 噪声/空行同样被清理）。"""
+    monkeypatch.setattr(
+        file_extract,
+        "_extract_from_image",
+        lambda data: "1. 甲\n答案：A\n\n\n\n12\n正文",
+    )
+
+    text = file_extract.extract_text_from_file("a.png", b"fake-image")
+
+    assert "12" not in text
+    assert "\n\n\n" not in text
+    assert "正文" in text
+    assert text.source == "ocr"

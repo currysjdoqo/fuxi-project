@@ -27,6 +27,7 @@ frontend/dist/
 
 # Uploads
 uploads/
+private_uploads/
 data/
 exports/
 
@@ -47,12 +48,15 @@ Desktop.ini
 *.temp
 *.err
 *.msi
+.pytest_tmp/
 
 # Test files
 test_*.py
 check_*.py
 fix_*.py
 test_export.*
+!tests/test_chapter_export.py
+!tests/test_file_extract_ocr.py
 
 # Codex skills
 codex/

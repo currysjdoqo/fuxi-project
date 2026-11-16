@@ -577,6 +577,17 @@ export const exportQuestions = async (subjectId, options = {}) => {
   return response.data
 }
 
+export const exportChapterReview = async (chapterIds, format, filename) => {
+  const response = await api.post('/export/chapters', {
+    chapter_ids: chapterIds,
+    format,
+    filename
+  }, {
+    responseType: 'blob'
+  })
+  return response
+}
+
 // 好友相关API
 export const sendFriendRequest = async (userCode) => {
   const response = await api.post('/friends/request', { user_code: userCode })
